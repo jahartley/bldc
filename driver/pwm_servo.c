@@ -70,7 +70,7 @@ uint32_t pwm_servo_init(uint32_t freq_hz, float duty) {
 }
 
 void pwm_servo_init_servo(void) {
-	pwm_servo_init(SERVO_OUT_RATE_HZ, 0.0);
+	// Disabled - Servo output disabled to prevent TIM4 pin conflicts
 }
 
 void pwm_servo_stop(void) {

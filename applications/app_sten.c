@@ -124,9 +124,11 @@ void app_sten_stop(void) {
 	stop_now = true;
 
 	if (is_running) {
+#ifdef HW_UART_DEV
 		uartStop(&HW_UART_DEV);
 		palSetPadMode(HW_UART_TX_PORT, HW_UART_TX_PIN, PAL_MODE_INPUT_PULLUP);
 		palSetPadMode(HW_UART_RX_PORT, HW_UART_RX_PIN, PAL_MODE_INPUT_PULLUP);
+#endif
 	}
 
 	while (is_running) {
@@ -139,6 +141,7 @@ static THD_FUNCTION(uart_thread, arg) {
 
 	chRegSetThreadName("UART");
 
+#ifdef HW_UART_DEV
 	uartStart(&HW_UART_DEV, &uart_cfg);
 	palSetPadMode(HW_UART_TX_PORT, HW_UART_TX_PIN, PAL_MODE_ALTERNATE(HW_UART_GPIO_AF) |
 			PAL_STM32_OSPEED_HIGHEST |
@@ -146,6 +149,7 @@ static THD_FUNCTION(uart_thread, arg) {
 	palSetPadMode(HW_UART_RX_PORT, HW_UART_RX_PIN, PAL_MODE_ALTERNATE(HW_UART_GPIO_AF) |
 			PAL_STM32_OSPEED_HIGHEST |
 			PAL_STM32_PUDR_PULLUP);
+#endif
 
 	systime_t time = chVTGetSystemTime();
 

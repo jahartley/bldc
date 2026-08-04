@@ -1,2 +1,16 @@
 CompileFlags:
-  Remove: [-m*, -f*]
+  CompilationDatabase: "."
+  Compiler: "c:/Users/judso/.gemini/antigravity/scratch/bldc/tools/gcc-arm-none-eabi-7-2018-q2-update/bin/arm-none-eabi-gcc.exe"
+  Add:
+    - "--target=arm-none-eabi"
+  Remove:
+    - "-mabi=*"
+    - "-mno-thumb-interwork"
+    - "-Wa,*"
+    - "-specs=*"
+
+Diagnostics:
+  UnusedIncludes: Strict
+
+
+

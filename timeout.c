@@ -206,13 +206,13 @@ static THD_FUNCTION(timeout_thread, arg) {
 			kill_sw = palReadPad(HW_ICU_GPIO, HW_ICU_PIN);
 			break;
 
-		case KILL_SW_MODE_ADC2_LOW:
-			kill_sw = ADC_VOLTS(ADC_IND_EXT2) < 1.65;
-			break;
+		// case KILL_SW_MODE_ADC2_LOW:
+		// 	kill_sw = ADC_VOLTS(ADC_IND_EXT2) < 1.65;
+		// 	break;
 
-		case KILL_SW_MODE_ADC2_HIGH:
-			kill_sw = ADC_VOLTS(ADC_IND_EXT2) > 1.65;
-			break;
+		// case KILL_SW_MODE_ADC2_HIGH:
+		// 	kill_sw = ADC_VOLTS(ADC_IND_EXT2) > 1.65;
+		// 	break;
 
 		case KILL_SW_MODE_ADC3_LOW:
 			kill_sw = ADC_VOLTS(ADC_IND_EXT3) < 1.65;

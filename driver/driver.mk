@@ -1,5 +1,6 @@
 CSRC += \
 	driver/eeprom.c \
+	driver/field_driver.c \
 	driver/i2c_bb.c \
 	driver/ledpwm.c \
 	driver/servo_dec.c \

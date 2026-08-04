@@ -149,7 +149,7 @@ ABI_config_t encoder_cfg_ABI = {
 ENCSINCOS_config_t encoder_cfg_sincos = {0};
 
 TS5700N8501_config_t encoder_cfg_TS5700N8501 = {
-#if defined(HW_ADC_EXT_GPIO) && defined(HW_ADC_EXT_GPIO)
+#if defined(HW_ADC_EXT_GPIO) && defined(HW_UART_DEV)
 		&HW_UART_DEV,
 		HW_UART_GPIO_AF,
 		/*UART PINOUT*/

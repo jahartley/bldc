@@ -1190,7 +1190,7 @@ static lbm_value ext_get_adc(lbm_value *args, lbm_uint argn) {
 		lbm_int channel = lbm_dec_as_i32(args[0]);
 		switch (channel) {
 		case 0: return lbm_enc_float(ADC_VOLTS(ADC_IND_EXT));
-		case 1: return lbm_enc_float(ADC_VOLTS(ADC_IND_EXT2));
+		case 1: return lbm_enc_float(/*ADC_VOLTS(ADC_IND_EXT2)*/0.0f);
 		case 2: return lbm_enc_float(ADC_VOLTS(ADC_IND_EXT3));
 		case 3: return lbm_enc_float(ADC_VOLTS(ADC_IND_TEMP_MOTOR));
 		case 4: return lbm_enc_float(ADC_VOLTS(ADC_IND_EXT4));
@@ -3347,6 +3347,7 @@ static lbm_value ext_uart_start(lbm_value *args, lbm_uint argn) {
 	uart_cfg.speed = baud;
 	uart_cfg.cr3 = half_duplex ? USART_CR3_HDSEL : 0;
 
+#ifdef HW_UART_DEV
 	sdStop(&HW_UART_DEV);
 	sdStart(&HW_UART_DEV, &uart_cfg);
 
@@ -3356,6 +3357,7 @@ static lbm_value ext_uart_start(lbm_value *args, lbm_uint argn) {
 	}
 
 	uart_started = true;
+#endif
 
 	return ENC_SYM_TRUE;
 }
@@ -3363,20 +3365,24 @@ static lbm_value ext_uart_start(lbm_value *args, lbm_uint argn) {
 static lbm_value ext_uart_stop(lbm_value *args, lbm_uint argn) {
 	(void)args; (void)argn;
 
+#ifdef HW_UART_DEV
 	if (uart_started) {
 		sdStop(&HW_UART_DEV);
 	}
+#endif
 
 	return ENC_SYM_TRUE;
 }
 
 static void wait_uart_tx_task(void *arg) {
 	(void)arg;
+#ifdef HW_UART_DEV
 	while(!chOQIsEmptyI(&HW_UART_DEV.oqueue)){
 		chThdSleepMilliseconds(1);
 	}
 	chThdSleepMilliseconds(1);
 	HW_UART_DEV.usart->CR1 |= USART_CR1_RE;
+#endif
 }
 
 static lbm_value ext_uart_write(lbm_value *args, lbm_uint argn) {
@@ -3384,11 +3390,8 @@ static lbm_value ext_uart_write(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	if (!uart_started) {
-		return ENC_SYM_EERROR;
-	}
-
-	const int max_len = 50;
+	lbm_value curr = args[0];
+	const int max_len = 100;
 	uint8_t to_send[max_len];
 	uint8_t *to_send_ptr = to_send;
 	int ind = 0;
@@ -3398,24 +3401,22 @@ static lbm_value ext_uart_write(lbm_value *args, lbm_uint argn) {
 		to_send_ptr = (uint8_t*)array->data;
 		ind = array->size;
 	} else {
-		lbm_value curr = args[0];
 		while (lbm_is_cons(curr)) {
-			lbm_value  arg = lbm_car(curr);
+			lbm_value val = lbm_car(curr);
 
-			if (lbm_is_number(arg)) {
-				to_send[ind++] = lbm_dec_as_u32(arg);
+			if (lbm_is_number(val)) {
+				if (ind < max_len) {
+					to_send[ind++] = lbm_dec_as_u32(val);
+				}
 			} else {
-				return ENC_SYM_EERROR;
-			}
-
-			if (ind == max_len) {
-				break;
+				return ENC_SYM_TERROR;
 			}
 
 			curr = lbm_cdr(curr);
 		}
 	}
 
+#ifdef HW_UART_DEV
 	if (uart_cfg.cr3 & USART_CR3_HDSEL) {
 		HW_UART_DEV.usart->CR1 &= ~USART_CR1_RE;
 		sdWrite(&HW_UART_DEV, to_send_ptr, ind);
@@ -3423,6 +3424,7 @@ static lbm_value ext_uart_write(lbm_value *args, lbm_uint argn) {
 	} else{
 		sdWrite(&HW_UART_DEV, to_send_ptr, ind);
 	}
+#endif
 
 	return ENC_SYM_TRUE;
 }
@@ -3443,7 +3445,10 @@ static void uart_rx_task(void *arg) {
 	int restart_cnt = lispif_get_restart_cnt();
 
 	unsigned int count = 0;
-	msg_t res = sdGetTimeout(&HW_UART_DEV, a->timeout);
+	msg_t res = MSG_TIMEOUT;
+
+#ifdef HW_UART_DEV
+	res = sdGetTimeout(&HW_UART_DEV, a->timeout);
 
 	while (res != MSG_TIMEOUT) {
 		a->data[a->offset + count] = (uint8_t)res;
@@ -3453,6 +3458,7 @@ static void uart_rx_task(void *arg) {
 		}
 		res = sdGetTimeout(&HW_UART_DEV, a->timeout);
 	}
+#endif
 
 	a->res = count;
 
@@ -3523,6 +3529,7 @@ static lbm_value ext_uart_read(lbm_value *args, lbm_uint argn) {
 	}
 }
 
+#ifdef HW_UART_DEV
 static i2c_bb_state i2c_cfg = {
 		HW_UART_RX_PORT, HW_UART_RX_PIN,
 		HW_UART_TX_PORT, HW_UART_TX_PIN,
@@ -3618,43 +3625,38 @@ static lbm_value ext_i2c_tx_rx(lbm_value *args, lbm_uint argn) {
 		return ENC_SYM_EERROR;
 	}
 
-	uint16_t addr = 0;
-	size_t txlen = 0;
-	size_t rxlen = 0;
-	uint8_t *txbuf = 0;
-	uint8_t *rxbuf = 0;
-	bool is_arr = lbm_is_array_r(args[1]);
-
-	if (!lbm_is_number(args[0])) {
+	uint8_t addr = 0;
+	if (lbm_is_number(args[0])) {
+		addr = lbm_dec_as_u32(args[0]);
+	} else {
 		return ENC_SYM_TERROR;
 	}
-	addr = lbm_dec_as_u32(args[0]);
 
-	if (is_arr) {
+	uint8_t *txbuf = 0;
+	unsigned int txlen = 0;
+	uint8_t *rxbuf = 0;
+	unsigned int rxlen = 0;
+
+	bool is_arr = false;
+	if (lbm_is_array_r(args[1])) {
 		lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(args[1]);
 		txbuf = (uint8_t*)array->data;
 		txlen = array->size;
-	} else {
-		txlen = lbm_list_length(args[1]);
-
-		if (txlen > 0) {
-			txbuf = lbm_malloc(txlen);
-			if (!txbuf) {
-				return ENC_SYM_MERROR;
-			}
-
+		is_arr = true;
+	} else if (lbm_is_cons(args[1])) {
+		int len = lbm_list_length(args[1]);
+		if (len > 0) {
+			txbuf = lbm_malloc(len);
 			lbm_value curr = args[1];
-			int ind = 0;
 			while (lbm_is_cons(curr)) {
-				lbm_value  arg = lbm_car(curr);
+				lbm_value val = lbm_car(curr);
 
-				if (lbm_is_number(arg)) {
-					txbuf[ind++] = lbm_dec_as_u32(arg);
+				if (lbm_is_number(val)) {
+					txbuf[txlen++] = lbm_dec_as_u32(val);
 				} else {
 					lbm_free(txbuf);
 					return ENC_SYM_TERROR;
 				}
-
 				curr = lbm_cdr(curr);
 			}
 		}
@@ -3703,6 +3705,24 @@ static lbm_value ext_i2c_restore(lbm_value *args, lbm_uint argn) {
 
 	return lbm_enc_i(1);
 }
+#else
+static lbm_value ext_i2c_start(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return ENC_SYM_EERROR;
+}
+static lbm_value ext_i2c_tx_rx(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return ENC_SYM_EERROR;
+}
+static lbm_value ext_i2c_detect_addr(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return ENC_SYM_EERROR;
+}
+static lbm_value ext_i2c_restore(lbm_value *args, lbm_uint argn) {
+	(void)args; (void)argn;
+	return ENC_SYM_EERROR;
+}
+#endif
 
 static lbm_value ext_gpio_configure(lbm_value *args, lbm_uint argn) {
 	LBM_CHECK_ARGN(2);
@@ -6689,7 +6709,9 @@ void lispif_load_vesc_extensions(bool main_found) {
 		lbm_add_extension("uart-read", ext_uart_read);
 
 		// I2C
+#ifdef HW_UART_DEV
 		i2c_started = false;
+#endif
 		lbm_add_extension("i2c-start", ext_i2c_start);
 		lbm_add_extension("i2c-tx-rx", ext_i2c_tx_rx);
 		lbm_add_extension("i2c-restore", ext_i2c_restore);

@@ -72,8 +72,10 @@ static volatile bool range_ok = true;
 void app_adc_configure(adc_config *conf) {
 	if (!buttons_detached && (((conf->buttons >> 0) & 1) || CTRL_USES_BUTTON(conf->ctrl_type))) {
 		if (use_rx_tx_as_buttons) {
+#ifdef HW_UART_DEV
 			palSetPadMode(HW_UART_TX_PORT, HW_UART_TX_PIN, PAL_MODE_INPUT_PULLUP);
 			palSetPadMode(HW_UART_RX_PORT, HW_UART_RX_PIN, PAL_MODE_INPUT_PULLUP);
+#endif
 		} else {
 			palSetPadMode(HW_ICU_GPIO, HW_ICU_PIN, PAL_MODE_INPUT_PULLUP);
 		}
@@ -83,22 +85,11 @@ void app_adc_configure(adc_config *conf) {
 	ms_without_power = 0.0;
 }
 
-void app_adc_start(bool use_rx_tx) {
-#ifdef HW_ADC_EXT_GPIO
-	palSetPadMode(HW_ADC_EXT_GPIO, HW_ADC_EXT_PIN, PAL_MODE_INPUT_ANALOG);
-#endif
-#ifdef HW_ADC_EXT2_GPIO
-	palSetPadMode(HW_ADC_EXT2_GPIO, HW_ADC_EXT2_PIN, PAL_MODE_INPUT_ANALOG);
-#endif
-
-	if (buttons_detached) {
-		use_rx_tx_as_buttons = false;
-	} else {
-		use_rx_tx_as_buttons = use_rx_tx;
-	}
-
-	stop_now = false;
-	chThdCreateStatic(adc_thread_wa, sizeof(adc_thread_wa), NORMALPRIO, adc_thread, NULL);
+void app_adc_start(bool primary) {
+	(void)primary;
+	// Hard-disabled: PA7 is dedicated to ACS712 Field Current Sensing
+	// PA6 is dedicated to Field Driver Enable
+	return;
 }
 
 void app_adc_stop(void) {
@@ -288,6 +279,7 @@ static THD_FUNCTION(adc_thread, arg) {
 		bool cc_button = false;
 		bool rev_button = false;
 		if (use_rx_tx_as_buttons) {
+#ifdef HW_UART_DEV
 			cc_button = !palReadPad(HW_UART_TX_PORT, HW_UART_TX_PIN);
 			if ((config.buttons >> 1) & 1) {
 				cc_button = !cc_button;
@@ -296,6 +288,7 @@ static THD_FUNCTION(adc_thread, arg) {
 			if ((config.buttons >> 2) & 1) {
 				rev_button = !rev_button;
 			}
+#endif
 		} else {
 			// When only one button input is available, use it differently depending on the control mode
 			if (config.ctrl_type == ADC_CTRL_TYPE_CURRENT_REV_BUTTON ||

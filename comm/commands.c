@@ -51,6 +51,7 @@
 #include "bms.h"
 #include "qmlui.h"
 #include "crc.h"
+#include "field_driver.h"
 #ifdef USE_LISPBM
 #include "lispif.h"
 #endif
@@ -90,10 +91,65 @@ static volatile int fw_version_sent_cnt = 0;
 static bool is_initialized = false;
 static int nrf_flags = 0;
 
+static void terminal_field_en(int argc, const char **argv) {
+	if (argc == 2) {
+		int en = atoi(argv[1]);
+		field_driver_set_enable(en != 0);
+		commands_printf("Field Enable set to: %s\n", field_driver_get_enable() ? "ENABLED" : "DISABLED");
+	} else {
+		commands_printf("Usage: field_en <0|1>\n");
+	}
+}
+
+static void terminal_field_duty(int argc, const char **argv) {
+	if (argc == 2) {
+		float duty = atof(argv[1]);
+		field_driver_set_duty(duty);
+		commands_printf("Field PWM Duty set to: %.2f%%\n", (double)(field_driver_get_duty() * 100.0f));
+	} else {
+		commands_printf("Usage: field_duty <0.0 - 1.0>\n");
+	}
+}
+
+static void terminal_field_cal(int argc, const char **argv) {
+	(void)argc; (void)argv;
+	commands_printf("Performing ACS712 zero offset calibration...");
+	field_driver_calibrate_zero();
+	commands_printf("Done! Zero Offset Voltage: %.4f V\n", (double)field_driver_get_zero_offset_volts());
+}
+
+static void terminal_field_status(int argc, const char **argv) {
+	(void)argc; (void)argv;
+	commands_printf("--- Field Coil H-Bridge & ACS712 Status ---");
+	commands_printf("Enable Pin (PB10 TX): %s", field_driver_get_enable() ? "ENABLED" : "DISABLED");
+	commands_printf("PWM Pin (PB6 TIM4)  : 5.0 kHz (Duty: %.2f%%)", (double)(field_driver_get_duty() * 100.0f));
+	commands_printf("ACS712 Hardware     : %s", field_driver_has_fault() ? "FAULT (Disconnected/Low Volts < 0.1V)" : "OK");
+	commands_printf("Raw ADC Voltage     : %.3f V", (double)field_driver_get_raw_adc_volts());
+	commands_printf("Zero Offset Volts   : %.4f V", (double)field_driver_get_zero_offset_volts());
+	commands_printf("Measured Current    : %.2f A", (double)field_driver_get_current());
+	commands_printf("Input Vbatt Voltage : %.2f V", (double)mc_interface_get_input_voltage_filtered());
+	commands_printf("Dynamic Ld          : %.2f uH", (double)(field_get_foc_ld() * 1e6f));
+	commands_printf("Dynamic Lq          : %.2f uH", (double)(field_get_foc_lq() * 1e6f));
+	commands_printf("Dynamic Flux        : %.3f mWb\n", (double)(field_get_foc_flux_linkage() * 1e3f));
+}
+
+static void terminal_field_clear_fault(int argc, const char **argv) {
+	(void)argc; (void)argv;
+	field_driver_clear_fault();
+	commands_printf("Field driver hardware fault cleared!\n");
+}
+
 void commands_init(void) {
 	chMtxObjectInit(&print_mutex);
 	chMtxObjectInit(&terminal_mutex);
 	chThdCreateStatic(blocking_thread_wa, sizeof(blocking_thread_wa), NORMALPRIO, blocking_thread, NULL);
+
+	terminal_register_command_callback("field_en", "Enable/Disable field H-Bridge driver", "<0|1>", terminal_field_en);
+	terminal_register_command_callback("field_duty", "Set field PWM duty cycle", "<0.0 - 1.0>", terminal_field_duty);
+	terminal_register_command_callback("field_cal", "Re-calibrate ACS712 zero offset", "", terminal_field_cal);
+	terminal_register_command_callback("field_clear_fault", "Clear ACS712 latched hardware disconnect fault", "", terminal_field_clear_fault);
+	terminal_register_command_callback("field_status", "Get field driver & ACS712 status", "", terminal_field_status);
+
 	is_initialized = true;
 }
 

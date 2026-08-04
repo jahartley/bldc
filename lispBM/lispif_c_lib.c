@@ -362,7 +362,8 @@ static float lib_io_read_analog(VESC_PIN pin_vesc) {
 	if (pin_vesc == VESC_PIN_ADC1) {
 		res = ADC_VOLTS(ADC_IND_EXT);
 	} else if (pin_vesc == VESC_PIN_ADC2) {
-		res = ADC_VOLTS(ADC_IND_EXT2);
+		//res = ADC_VOLTS(ADC_IND_EXT2);
+		res = 0.0f;
 	}
 
 	return res;
@@ -396,6 +397,7 @@ static bool lib_uart_start(uint32_t baudrate, bool half_duplex) {
 	uart_cfg.speed = baudrate;
 	uart_cfg.cr3 = half_duplex ? USART_CR3_HDSEL : 0;
 
+#ifdef HW_UART_DEV
 	sdStop(&HW_UART_DEV);
 	sdStart(&HW_UART_DEV, &uart_cfg);
 
@@ -403,20 +405,24 @@ static bool lib_uart_start(uint32_t baudrate, bool half_duplex) {
 	if (!half_duplex) {
 		palSetPadMode(HW_UART_RX_PORT, HW_UART_RX_PIN, PAL_MODE_ALTERNATE(HW_UART_GPIO_AF));
 	}
+#endif
 
 	return true;
 }
 
 static void wait_uart_tx_task(void *arg) {
 	(void)arg;
+#ifdef HW_UART_DEV
 	while(!chOQIsEmptyI(&HW_UART_DEV.oqueue)){
 		chThdSleepMilliseconds(1);
 	}
 	chThdSleepMilliseconds(1);
 	HW_UART_DEV.usart->CR1 |= USART_CR1_RE;
+#endif
 }
 
 static bool lib_uart_write(const uint8_t *data, uint32_t size) {
+#ifdef HW_UART_DEV
 	if (uart_cfg.cr3 & USART_CR3_HDSEL) {
 		HW_UART_DEV.usart->CR1 &= ~USART_CR1_RE;
 		sdWrite(&HW_UART_DEV, data, size);
@@ -424,12 +430,19 @@ static bool lib_uart_write(const uint8_t *data, uint32_t size) {
 	} else{
 		sdWrite(&HW_UART_DEV, data, size);
 	}
+#else
+	(void)data; (void)size;
+#endif
 
 	return true;
 }
 
 static int32_t lib_uart_read(void) {
+#ifdef HW_UART_DEV
 	return sdGetTimeout(&HW_UART_DEV, TIME_IMMEDIATE);
+#else
+	return -1;
+#endif
 }
 
 static float lib_ts_to_age_s(systime_t ts) {

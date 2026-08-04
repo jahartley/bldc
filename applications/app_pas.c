@@ -86,10 +86,9 @@ void app_pas_configure(pas_config *conf) {
  * false when PAS app shares control with the ADC app for current command
  */
 void app_pas_start(bool is_primary_output) {
-	stop_now = false;
-	chThdCreateStatic(pas_thread_wa, sizeof(pas_thread_wa), NORMALPRIO, pas_thread, NULL);
-
-	primary_output = is_primary_output;
+	(void)is_primary_output;
+	// Hard-disabled: PAS pedal assist app is disarmed
+	return;
 }
 
 bool app_pas_is_running(void) {

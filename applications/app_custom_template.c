@@ -131,8 +131,8 @@ static void terminal_test(int argc, const char **argv) {
 		commands_printf("You have entered %d", d);
 
 		// For example, read the ADC inputs on the COMM header.
-		commands_printf("ADC1: %.2f V ADC2: %.2f V",
-				(double)ADC_VOLTS(ADC_IND_EXT), (double)ADC_VOLTS(ADC_IND_EXT2));
+		//commands_printf("ADC1: %.2f V ADC2: %.2f V",
+		//		(double)ADC_VOLTS(ADC_IND_EXT), (double)ADC_VOLTS(ADC_IND_EXT2));
 	} else {
 		commands_printf("This command requires one argument.\n");
 	}

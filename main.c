@@ -47,6 +47,7 @@
 #include "rfhelp.h"
 #include "spi_sw.h"
 #include "timer.h"
+#include "field_driver.h"
 #include "imu.h"
 #include "flash_helper.h"
 #include "conf_custom.h"
@@ -343,6 +344,8 @@ int main(void) {
 
 	ledpwm_init();
 	mc_interface_init(cfg_reset);
+
+	field_driver_init();
 
 	commands_init();
 

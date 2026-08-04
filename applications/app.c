@@ -87,26 +87,17 @@ void app_set_configuration(app_configuration *conf) {
 	imu_init(&conf->imu_conf);
 
 	if (app_changed) {
-#ifndef HW_OVERRIDE_PIN_PPM_BUZZER
-		if (appconf.app_to_use != APP_PPM &&
-				appconf.app_to_use != APP_PPM_UART &&
-				appconf.servo_out_enable) {
-			servodec_stop();
-			pwm_servo_init_servo();
-		} else {
-			pwm_servo_stop();
-		}
-#endif
+		// Servo output disabled to prevent TIM4 conflicts with field coil driver
+		pwm_servo_stop();
+		servodec_stop();
 
 		switch (appconf.app_to_use) {
 		case APP_PPM:
-#ifndef HW_OVERRIDE_PIN_PPM_BUZZER
-			app_ppm_start();
-#endif
+			// Disabled - PPM input uses GPIOB 6 / TIM4 which is dedicated to Field Coil PWM driver
 			break;
 
 		case APP_ADC:
-			app_adc_start(true);
+			// Disabled - ADC1 (PA7) is dedicated to ACS712 Field Current sensing
 			break;
 
 		case APP_UART:
@@ -116,15 +107,13 @@ void app_set_configuration(app_configuration *conf) {
 
 		case APP_PPM_UART:
 			hw_stop_i2c();
-#ifndef HW_OVERRIDE_PIN_PPM_BUZZER
-			app_ppm_start();
-#endif
+			// Disabled - PPM input uses GPIOB 6 / TIM4 which is dedicated to Field Coil PWM driver
 			app_uartcomm_start(UART_PORT_COMM_HEADER);
 			break;
 
 		case APP_ADC_UART:
 			hw_stop_i2c();
-			app_adc_start(false);
+			// Disabled - ADC1 (PA7) is dedicated to ACS712 Field Current sensing
 			app_uartcomm_start(UART_PORT_COMM_HEADER);
 			break;
 
@@ -133,12 +122,11 @@ void app_set_configuration(app_configuration *conf) {
 			break;
 
 		case APP_PAS:
-			app_pas_start(true);
+			// Disabled - PAS app input uses dedicated pins
 			break;
 
 		case APP_ADC_PAS:
-			app_adc_start(false);
-			app_pas_start(false);
+			// Disabled - ADC1 (PA7) is dedicated to ACS712 Field Current sensing
 			break;
 
 		case APP_NRF:

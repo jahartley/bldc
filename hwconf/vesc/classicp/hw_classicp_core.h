@@ -26,6 +26,8 @@
 	#error "Must define hardware type"
 #endif
 
+#define FW_NAME "JAH_MGU"
+
 // HW properties
 #define HW_HAS_3_SHUNTS
 #define HW_HAS_PHASE_FILTERS
@@ -50,10 +52,10 @@
 #define CURRENT_FILTER_ON()		palSetPad(CURRENT_FILTER_GPIO, CURRENT_FILTER_PIN)
 #define CURRENT_FILTER_OFF()	palClearPad(CURRENT_FILTER_GPIO, CURRENT_FILTER_PIN)
 
-#define AUX_GPIO				GPIOC
-#define AUX_PIN					14
-#define AUX_ON()				palSetPad(AUX_GPIO, AUX_PIN)
-#define AUX_OFF()				palClearPad(AUX_GPIO, AUX_PIN)
+#define AUX_GPIO				GPIOA
+#define AUX_PIN					6
+#define AUX_ON()				/* Disabled - GPIOA 6 is dedicated to Field Enable */
+#define AUX_OFF()				/* Disabled - GPIOA 6 is dedicated to Field Enable */
 
 #define HW_SHUTDOWN_HOLD_ON();
 #define HW_SAMPLE_SHUTDOWN()		1
@@ -108,7 +110,7 @@
 #define ADC_IND_SENS3			5
 #define ADC_IND_VIN_SENS		14
 #define ADC_IND_EXT				6
-#define ADC_IND_EXT2			7
+//#define ADC_IND_EXT2			7
 #define ADC_IND_EXT4			12
 #define ADC_IND_EXT5			13
 #define ADC_IND_TEMP_MOS		18
@@ -165,13 +167,13 @@
 #define HW_ADC_EXT5_GPIO		GPIOB
 #define HW_ADC_EXT5_PIN			1
 
-// UART Peripheral
-#define HW_UART_DEV				SD3
-#define HW_UART_GPIO_AF			GPIO_AF_USART3
-#define HW_UART_TX_PORT			GPIOB
-#define HW_UART_TX_PIN			10
-#define HW_UART_RX_PORT			GPIOB
-#define HW_UART_RX_PIN			11
+// UART Peripheral - Disabled so GPIOB 10 (TX) can be used as 3.3V Digital Field Enable Output
+//#define HW_UART_DEV				SD3
+//#define HW_UART_GPIO_AF			GPIO_AF_USART3
+//#define HW_UART_TX_PORT			GPIOB
+//#define HW_UART_TX_PIN			10
+//#define HW_UART_RX_PORT			GPIOB
+//#define HW_UART_RX_PIN			11
 
 // Permanent UART Peripheral (SWD/ESP)
 // TODO: Encoder UART
@@ -259,7 +261,7 @@
 
 // Default setting overrides
 #ifndef MCCONF_L_MIN_VOLTAGE
-#define MCCONF_L_MIN_VOLTAGE			14.0		// Minimum input voltage
+#define MCCONF_L_MIN_VOLTAGE			8.0		// Minimum input voltage
 #endif
 #ifndef MCCONF_L_MAX_VOLTAGE
 #define MCCONF_L_MAX_VOLTAGE			94.0	// Maximum input voltage
@@ -274,11 +276,27 @@
 #define MCCONF_FOC_SAMPLE_V0_V7			false	// Run control loop in both v0 and v7 (requires phase shunts)
 #endif
 #ifndef MCCONF_L_IN_CURRENT_MAX
-#define MCCONF_L_IN_CURRENT_MAX			150.0	// Input current limit in Amperes (Upper)
+#define MCCONF_L_IN_CURRENT_MAX			300.0	// Input current limit in Amperes (Upper)
 #endif
 #ifndef MCCONF_L_IN_CURRENT_MIN
-#define MCCONF_L_IN_CURRENT_MIN			-150.0	// Input current limit in Amperes (Lower)
+#define MCCONF_L_IN_CURRENT_MIN			-200.0	// Input current limit in Amperes (Lower)
 #endif
+#ifndef MCCONF_FOC_MOTOR_L
+#define MCCONF_FOC_MOTOR_L				38.10e-6 // 0A Field Ls (Average Inductance) in Henries
+#endif
+#ifndef MCCONF_FOC_MOTOR_LD_LQ_DIFF
+#define MCCONF_FOC_MOTOR_LD_LQ_DIFF		15.94e-6 // 0A Field (Lq - Ld) Difference in Henries
+#endif
+#ifndef MCCONF_FOC_MOTOR_FLUX_LINKAGE
+#define MCCONF_FOC_MOTOR_FLUX_LINKAGE	0.00308  // 0A Field Flux Linkage in Weber
+#endif
+#ifndef MCCONF_FOC_MOTOR_R
+#define MCCONF_FOC_MOTOR_R				0.01150  // Phase Resistance in Ohms
+#endif
+#ifndef MCCONF_SI_MOTOR_POLES
+#define MCCONF_SI_MOTOR_POLES			16       // 8 Pole Pairs = 16 Poles
+#endif
+
 #ifndef APPCONF_APP_TO_USE
 #define APPCONF_APP_TO_USE				APP_NONE
 #endif
@@ -287,7 +305,7 @@
 #define HW_LIM_CURRENT			-410.0, 410.0
 #define HW_LIM_CURRENT_IN		-410.0, 410.0
 #define HW_LIM_CURRENT_ABS		0.0, 600.0
-#define HW_LIM_VIN				14.0, 97.0
+#define HW_LIM_VIN				8.0, 97.0
 #define HW_LIM_ERPM				-200e3, 200e3
 #define HW_LIM_DUTY_MIN			0.0, 0.1
 #define HW_LIM_DUTY_MAX			0.0, 1.0

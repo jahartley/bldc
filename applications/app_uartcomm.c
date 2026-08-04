@@ -108,12 +108,14 @@ static void process_packet(unsigned char *data, unsigned int len, unsigned int p
 }
 
 void app_uartcomm_initialize(void) {
+#ifdef HW_UART_DEV
 	serialPortDriverTx[0] = &HW_UART_DEV;
 	serialPortDriverRx[0] = &HW_UART_DEV;
 	uart_cfg[0].speed =  BAUDRATE;
 	RxGpioPort[0] = HW_UART_RX_PORT; RxGpioPin[0] = HW_UART_RX_PIN;
 	TxGpioPort[0] = HW_UART_TX_PORT; TxGpioPin[0] = HW_UART_TX_PIN;
 	gpioAF[0] = HW_UART_GPIO_AF;
+#endif
 
 #ifdef HW_UART_P_DEV
 #ifdef HW_UART_P_DEV_TX
@@ -149,6 +151,10 @@ void app_uartcomm_start(UART_PORT port_number) {
 		chThdCreateStatic(packet_process_thread_wa, sizeof(packet_process_thread_wa),
 				NORMALPRIO, packet_process_thread, NULL);
 		thread_is_running = true;
+	}
+
+	if (serialPortDriverRx[port_number] == NULL || serialPortDriverTx[port_number] == NULL) {
+		return;
 	}
 
 	sdStart(serialPortDriverRx[port_number], &uart_cfg[port_number]);

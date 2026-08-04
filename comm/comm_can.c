@@ -1266,7 +1266,7 @@ void comm_can_send_status6(uint8_t id, bool replace) {
 	int32_t send_index = 0;
 	uint8_t buffer[8];
 	buffer_append_float16(buffer, ADC_VOLTS(ADC_IND_EXT), 1e3, &send_index);
-	buffer_append_float16(buffer, ADC_VOLTS(ADC_IND_EXT2), 1e3, &send_index);
+	buffer_append_float16(buffer, /*ADC_VOLTS(ADC_IND_EXT2)*/0.0f, 1e3, &send_index);
 	buffer_append_float16(buffer, ADC_VOLTS(ADC_IND_EXT3), 1e3, &send_index);
 	buffer_append_float16(buffer, servodec_get_servo(0), 1e3, &send_index);
 	comm_can_transmit_eid_replace(id | ((uint32_t)CAN_PACKET_STATUS_6 << 8),

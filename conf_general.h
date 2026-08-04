@@ -24,7 +24,11 @@
 #define FW_VERSION_MAJOR			7
 #define FW_VERSION_MINOR			01
 // Set to 0 for building a release and iterate during beta test builds
-#define FW_TEST_VERSION_NUMBER		1
+#define FW_TEST_VERSION_NUMBER		16
+
+// Enable Custom App and Custom Config UI in VESC Tool
+#define APP_CUSTOM_TO_USE			"app_custom_template.c"
+#define APPCONF_APP_TO_USE			APP_NONE
 
 #include "datatypes.h"
 

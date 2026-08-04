@@ -119,6 +119,10 @@ void hw_init_gpio(void) {
 	palSetPadMode(GPIOA, 6, PAL_MODE_INPUT_ANALOG);
 	palSetPadMode(GPIOA, 7, PAL_MODE_INPUT_ANALOG);
 
+	// GPIOB 10 used for Field H-Bridge Enable Output (TX Pin on COMM Header)
+	palSetPadMode(GPIOB, 10, PAL_MODE_OUTPUT_PUSHPULL | PAL_STM32_OSPEED_HIGHEST);
+	palClearPad(GPIOB, 10);
+
 	palSetPadMode(GPIOB, 0, PAL_MODE_INPUT_ANALOG);
 	palSetPadMode(GPIOB, 1, PAL_MODE_INPUT_ANALOG);
 
@@ -142,7 +146,7 @@ void hw_setup_adc_channels(void) {
 	// ADC2 regular channels
 	ADC_RegularChannelConfig(ADC2, ADC_Channel_11, 1, ADC_SampleTime_15Cycles);			// 1 Curr 2
 	ADC_RegularChannelConfig(ADC2, ADC_Channel_1, 2, ADC_SampleTime_15Cycles);			// 4 Volt 2
-	ADC_RegularChannelConfig(ADC2, ADC_Channel_6, 3, ADC_SampleTime_15Cycles);			// 7 EXT2
+	ADC_RegularChannelConfig(ADC2, ADC_Channel_6, 3, ADC_SampleTime_15Cycles);			// 7 EXT2 (AD2 restored to ADC_Channel_6)
 	ADC_RegularChannelConfig(ADC2, ADC_Channel_9, 4, ADC_SampleTime_15Cycles);			// 10 EXT5
 	ADC_RegularChannelConfig(ADC2, ADC_Channel_9, 5, ADC_SampleTime_15Cycles);			// 13 EXT5
 	ADC_RegularChannelConfig(ADC2, ADC_Channel_4, 6, ADC_SampleTime_15Cycles);			// 16 Temp Motor

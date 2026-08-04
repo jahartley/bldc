@@ -20,6 +20,7 @@
 #include "foc_math.h"
 #include "utils_math.h"
 #include "hw.h"
+#include "field_driver.h"
 #include <math.h>
 
 // See http://cas.ensmp.fr/~praly/Telechargement/Journaux/2010-IEEE_TPEL-Lee-Hong-Nam-Ortega-Praly-Astolfi.pdf
@@ -29,8 +30,8 @@ void foc_observer_update(float v_alpha, float v_beta, float i_alpha, float i_bet
 	mc_configuration *conf_now = motor->m_conf;
 
 	float R = conf_now->foc_motor_r;
-	float L = conf_now->foc_motor_l;
-	float lambda = conf_now->foc_motor_flux_linkage;
+	float L = field_get_foc_l();
+	float lambda = field_get_foc_flux_linkage();
 
 	// Saturation compensation
 	switch(conf_now->foc_sat_comp_mode) {
@@ -71,7 +72,7 @@ void foc_observer_update(float v_alpha, float v_beta, float i_alpha, float i_bet
 		R = motor->m_res_temp_comp;
 	}
 
-	float ld_lq_diff = conf_now->foc_motor_ld_lq_diff;
+	float ld_lq_diff = field_get_foc_ld_lq_diff();
 	float id = motor->m_motor_state.id;
 	float iq = motor->m_motor_state.iq;
 

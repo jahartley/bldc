@@ -399,7 +399,11 @@ static THD_FUNCTION(control_thread, arg) {
 
 				// Sample push button slower for some debouncing
 
+#ifdef HW_UART_DEV
 				btn_left_samples += palReadPad(HW_UART_RX_PORT, HW_UART_RX_PIN) ? 1 : -1;
+#else
+				btn_left_samples += -1;
+#endif
 				utils_truncate_number_int(&btn_left_samples, -4, 5);
 				m_pod_state.btn_left_pressed = btn_left_samples > 0;
 
