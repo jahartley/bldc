@@ -268,16 +268,16 @@
 #define MCCONF_FOC_F_ZV					30000.0
 #endif
 #ifndef MCCONF_L_MAX_ABS_CURRENT
-#define MCCONF_L_MAX_ABS_CURRENT		120.0	// The maximum absolute current above which a fault is generated
+#define MCCONF_L_MAX_ABS_CURRENT		400.0	// The maximum absolute current above which a fault is generated
 #endif
 #ifndef MCCONF_FOC_SAMPLE_V0_V7
 #define MCCONF_FOC_SAMPLE_V0_V7			false	// Run control loop in both v0 and v7 (requires phase shunts)
 #endif
 #ifndef MCCONF_L_IN_CURRENT_MAX
-#define MCCONF_L_IN_CURRENT_MAX			150.0	// Input current limit in Amperes (Upper)
+#define MCCONF_L_IN_CURRENT_MAX			300.0	// Input current limit in Amperes (Upper)
 #endif
 #ifndef MCCONF_L_IN_CURRENT_MIN
-#define MCCONF_L_IN_CURRENT_MIN			-150.0	// Input current limit in Amperes (Lower)
+#define MCCONF_L_IN_CURRENT_MIN			-200.0	// Input current limit in Amperes (Lower)
 #endif
 #ifndef APPCONF_APP_TO_USE
 #define APPCONF_APP_TO_USE				APP_NONE
@@ -292,6 +292,124 @@
 #define HW_LIM_DUTY_MIN			0.0, 0.1
 #define HW_LIM_DUTY_MAX			0.0, 1.0
 #define HW_LIM_TEMP_FET			-40.0, 110.0
+
+// JAH ADDED SETTING OVERRIDES ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+// Force default observer type to MXLEMMING_LAMBDA_COMP
+#ifdef MCCONF_FOC_OBSERVER_TYPE
+#undef MCCONF_FOC_OBSERVER_TYPE
+#endif
+#define MCCONF_FOC_OBSERVER_TYPE        3
+
+// Set saturation compensation off.
+#ifdef MCCONF_FOC_SAT_COMP_MODE
+#undef MCCONF_FOC_SAT_COMP_MODE
+#endif
+#define MCCONF_FOC_SAT_COMP_MODE        0
+
+#ifdef MCCONF_FOC_MOTOR_R
+#undef MCCONF_FOC_MOTOR_R
+#endif
+#define MCCONF_FOC_MOTOR_R				0.01160 //average stator resistance at 22 °C
+
+// --- FIELD RESISTANCE
+#define MGU_FIELD_R                  5.60    //field resistance at 22 °C
+// --- FIELD CURRENT SENSOR (ACS712-05B STANDARD DIRECT VIA ONBOARD 10k/10k) ---
+#define FIELD_CURRENT_SENSOR_UNI_DIRECTIONAL  1       // 1 for forward-only tracking
+#define FIELD_CURRENT_VOLTAGE_OFFSET_V        1.234f  // Your physical calibrated 0.0A rest voltage on the pin
+
+// Attenuated scale: +185mV/A standard sensitivity * 0.4936 actual divider factor = +91.316 mV/A
+#define FIELD_CURRENT_SENSOR_VOLTS_PER_AMP    0.091316f  
+
+// --- DYNAMIC PARAMETRIC FAULT MONITORING BOUNDARIES ---
+// Normal operational envelope tracks from 1.234V (0A) up to 1.501V (2.92A)
+// If the wire snaps or chip loses 5V power, the onboard pull-down drags the line to 0.0V
+#define FIELD_CURRENT_FAULT_VOLTAGE_MIN       0.80f   // Catches broken wire, lost 5V, or dead sensor chip
+#define FIELD_CURRENT_FAULT_VOLTAGE_MAX       2.20f   // Catches raw sensor rail overvoltage surges
+#define FIELD_CURRENT_FAULT_DEBOUNCE_CYCLES   100     // 5ms filter debounce window
+
+
+// Speed control PID settings
+// needs to work down to zero rpm.
+#ifdef MCCONF_S_PID_MIN_ERPM
+#undef MCCONF_S_PID_MIN_ERPM
+#endif
+#define MCCONF_S_PID_MIN_ERPM           0.0f
+// no braking so that we dont try to brake the engine as it fires.
+#ifdef MCCONF_S_PID_ALLOW_BRAKING
+#undef MCCONF_S_PID_ALLOW_BRAKING
+#endif
+#define MCCONF_S_PID_ALLOW_BRAKING      false
+
+
+// JAH ADDED FAST LOOKUP TABLES ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#define MGU_LOOKUP_SECTORS 5
+
+typedef struct {
+    float lower_bound_if;
+    
+    // --- BASE VECTOR ATTRIBUTES (SI UNITS) ---
+    float base_flux;
+    float base_ld;
+    float base_lq;
+    float base_l_avg;
+    float base_ld_lq_diff;
+    float base_inv_ld;
+    float base_inv_lq;
+    float base_p_inv_ld_lq;
+    
+    // --- PRECOMPUTED 1-CYCLE MULTIPLY SLOPES ---
+    float slope_flux;
+    float slope_ld;
+    float slope_lq;
+    float slope_l_avg;
+    float slope_ld_lq_diff;
+    float slope_inv_ld;
+    float slope_inv_lq;
+    float slope_p_inv_ld_lq;
+} if_lookup_row_t;
+
+static const if_lookup_row_t mgu_if_table[MGU_LOOKUP_SECTORS] = {
+    // --- ROW 0: OVERCURRENT CEILING TRACKING (& ANCHOR LIMIT >= 2.92A) ---
+    {
+        .lower_bound_if = 2.92f,
+        .base_flux = 0.01320000f, .base_ld = 0.0000140900f, .base_lq = 0.0000243500f, .base_l_avg = 0.0000192200f, .base_ld_lq_diff = 0.0000102600f,
+        .base_inv_ld = 70972.3203125f, .base_inv_lq = 41067.7617188f, .base_p_inv_ld_lq = -29904.5585938f,
+        .slope_flux = 0.00000000f, .slope_ld = 0.00000000f, .slope_lq = 0.00000000f, .slope_l_avg = 0.00000000f, .slope_ld_lq_diff = 0.00000000f,
+        .slope_inv_ld = 0.00000000f, .slope_inv_lq = 0.00000000f, .slope_p_inv_ld_lq = 0.00000000f
+    },
+    // --- ROW 1: INTERVAL SECTOR 2.00A TO 2.92A ---
+    {
+        .lower_bound_if = 2.00f,
+        .base_flux = 0.01241000f, .base_ld = 0.0000160900f, .base_lq = 0.0000281500f, .base_l_avg = 0.0000221200f, .base_ld_lq_diff = 0.0000120600f,
+        .base_inv_ld = 62150.4023438f, .base_inv_lq = 35523.9765625f, .base_p_inv_ld_lq = -26626.4257812f,
+        .slope_flux = 0.00085870f, .slope_ld = -0.0000021739f, .slope_lq = -0.0000041304f, .slope_l_avg = -0.0000031522f, .slope_ld_lq_diff = -0.0000019565f,
+        .slope_inv_ld = 9589.0410156f, .slope_inv_lq = 6025.8535156f, .slope_p_inv_ld_lq = -3563.1879883f
+    },
+    // --- ROW 2: INTERVAL SECTOR 1.00A TO 2.00A ---
+    {
+        .lower_bound_if = 1.00f,
+        .base_flux = 0.01008000f, .base_ld = 0.0000273400f, .base_lq = 0.0000431600f, .base_l_avg = 0.0000352500f, .base_ld_lq_diff = 0.0000158200f,
+        .base_inv_ld = 36576.4453125f, .base_inv_lq = 23169.6015625f, .base_p_inv_ld_lq = -13406.8437500f,
+        .slope_flux = 0.00233000f, .slope_ld = -0.0000112500f, .slope_lq = -0.0000150100f, .slope_l_avg = -0.0000131300f, .slope_ld_lq_diff = -0.0000037600f,
+        .slope_inv_ld = 25573.9570312f, .slope_inv_lq = 12354.3750000f, .slope_p_inv_ld_lq = -13219.5820312f
+    },
+    // --- ROW 3: INTERVAL SECTOR 0.50A TO 1.00A ---
+    {
+        .lower_bound_if = 0.50f,
+        .base_flux = 0.00680000f, .base_ld = 0.0000298550f, .base_lq = 0.0000461250f, .base_l_avg = 0.0000379900f, .base_ld_lq_diff = 0.0000162700f,
+        .base_inv_ld = 33495.2265625f, .base_inv_lq = 21680.2167969f, .base_p_inv_ld_lq = -11815.0107422f,
+        .slope_flux = 0.00656000f, .slope_ld = -0.0000050300f, .slope_lq = -0.0000059300f, .slope_l_avg = -0.0000054800f, .slope_ld_lq_diff = -0.0000009000f,
+        .slope_inv_ld = 6162.4370117f, .slope_inv_lq = 2978.7695312f, .slope_p_inv_ld_lq = -3183.6660156f
+    },
+    // --- ROW 4: FLOOR CEILING TRANSITION (0.00A TO 0.50A & NEGATIVE CURRENT BOUNDARY PROTECTION) ---
+    {
+        .lower_bound_if = 0.00f,
+        .base_flux = 0.00308000f, .base_ld = 0.0000301300f, .base_lq = 0.0000460700f, .base_l_avg = 0.0000381000f, .base_ld_lq_diff = 0.0000159400f,
+        .base_inv_ld = 33189.5117188f, .base_inv_lq = 21706.0996094f, .base_p_inv_ld_lq = -11483.4121094f,
+        .slope_flux = 0.00744000f, .slope_ld = -0.0000005500f, .slope_lq = 0.0000001100f, .slope_l_avg = -0.0000002200f, .slope_ld_lq_diff = 0.0000006600f,
+        .slope_inv_ld = 611.4300537f, .slope_inv_lq = -51.7656250f, .slope_p_inv_ld_lq = -663.1945801f
+    }
+};
 
 // Functions
 void smart_switch_thread_start(void);

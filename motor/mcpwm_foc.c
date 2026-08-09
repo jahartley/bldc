@@ -52,6 +52,7 @@ static volatile motor_all_state_t m_motor_2;
 static volatile int m_isr_motor = 0;
 
 // Private functions
+static void update_hybrid_mgu_parameters(motor_all_state_t *motor, float filtered_if);
 static void control_current(motor_all_state_t *motor, float dt);
 static void update_valpha_vbeta(motor_all_state_t *motor, float mod_alpha, float mod_beta, float voltage_normalize);
 static void stop_pwm_hw(motor_all_state_t *motor);
@@ -129,6 +130,44 @@ static volatile bool pid_thd_stop;
 #else
 #define M_MOTOR(is_second_motor)  (((void)is_second_motor), &m_motor_1)
 #endif
+
+// JAH added precomputed value look up ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+// Fast Parameter Injection Loop (Executes at 20kHz - 30kHz inside FOC Interrupt)
+static void update_hybrid_mgu_parameters(motor_all_state_t *motor, float filtered_if) {
+    int target_row = MGU_LOOKUP_SECTORS - 1; // Fallback to the 0.00A row
+	
+    // Sequential search from highest to lowest. 
+    // Breaks instantly on the first true condition, optimizing for high-load cranking/running states.
+    for (int i = 0; i < MGU_LOOKUP_SECTORS - 1; i++) {
+        if (mgu_if_table[i].lower_bound_if <= filtered_if) {
+            target_row = i;
+            break;
+        }
+    }
+
+    // Direct pointer reference to avoid repeated array lookup overhead
+    const if_lookup_row_t *row = &mgu_if_table[target_row];
+
+    // Single Delta Optimization: Calculate the delta current exactly once
+    float shared_delta = filtered_if - row->lower_bound_if;
+
+    // Zero-guard boundary: Handle minor negative ADC tracking noise safely
+    if (shared_delta < 0.0f) {
+        shared_delta = 0.0f;
+    }
+
+    // Multi-variable execution phase. 1 multiply and 1 add per line.
+    // Zero runtime division, zero nested branches. 
+    motor->m_injected_flux         = row->base_flux         + (shared_delta * row->slope_flux);
+    motor->m_injected_ld           = row->base_ld           + (shared_delta * row->slope_ld);
+    motor->m_injected_lq           = row->base_lq           + (shared_delta * row->slope_lq);
+    motor->m_injected_l_avg        = row->base_l_avg        + (shared_delta * row->slope_l_avg);
+    motor->m_injected_ld_lq_diff   = row->base_ld_lq_diff   + (shared_delta * row->slope_ld_lq_diff);
+    motor->m_injected_inv_ld       = row->base_inv_ld       + (shared_delta * row->slope_inv_ld);
+    motor->m_injected_inv_lq       = row->base_inv_lq       + (shared_delta * row->slope_inv_lq);
+    motor->m_injected_p_inv_ld_lq  = row->base_p_inv_ld_lq  + (shared_delta * row->slope_p_inv_ld_lq);
+}
+
 
 static void update_hfi_samples(foc_hfi_samples samples, volatile motor_all_state_t *motor) {
 	utils_sys_lock_cnt();
