@@ -2735,6 +2735,44 @@ int mcpwm_foc_dc_cal(bool cal_undriven) {
 #endif
 	}
 
+	// ============================================================================
+	// --- JAH added WRSM DYNAMIC ROTOR FIELD SENSOR DC CALIBRATION
+	// ============================================================================
+	float field_sum = 0.0f;
+	const int field_samples = 1000;
+	bool field_was_enabled = false;
+
+	// TODO - SET FIELD H BRIDGE ENABLE LOW!!! DELAY!!! THEN SAMPLE.
+	// get field_enabled control state, save in field_was_enabled.
+	// disable field here...
+	chThdSleepMicroseconds(200);
+
+	for (int cal_idx = 0; cal_idx < field_samples; cal_idx++) {
+		field_sum += ADC_VOLTS(ADC_IND_EXT);
+		chThdSleepMicroseconds(100); // 100µs delay to let ADC registers refresh
+	}
+
+	// TODD - RESTORE FIELD ENABLE TO PRIOR VALUE
+	// if (field_was_enabled) // CALL FIELD ENABLE...
+
+	float calibrated_field_offset = field_sum / (float)field_samples;
+
+	// Sane boundary guard check (ACS712 is ratiometric, typical 0A sits around 1.234V)
+	if (calibrated_field_offset > 0.8f && calibrated_field_offset < 2.0f) {
+		m_motor_1.m_conf->m_field_current_offset_v = calibrated_field_offset;
+	} else {
+		// Sensor missing or error detected: Keep uncalibrated configuration default
+		m_motor_1.m_conf->m_field_current_offset_v = FIELD_CURRENT_VOLTAGE_OFFSET_V;
+	}
+
+	// Bootstrap the 4-sample filter buffer with our freshly calibrated offset.
+	// This prevents immediate dynamic fault trips on the very first interrupt cycle!
+	for (int buf_idx = 0; buf_idx < 4; buf_idx++) {
+		m_if_volts_buffer[buf_idx] = m_motor_1.m_conf->m_field_current_offset_v;
+	}
+	m_if_buffer_idx = 0;
+	// --- END JAH addition =============================================================
+
 	// TODO: Make sure that offsets are no more than e.g. 5%, as larger values indicate hardware problems.
 
 	// Enable timeout
