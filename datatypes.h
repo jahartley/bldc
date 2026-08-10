@@ -587,6 +587,7 @@ typedef struct {
 	int si_battery_cells;
 	float si_battery_ah;
 	float si_motor_nl_current;
+	float m_field_current_offset_v;
 
 	// BMS Configuration
 	bms_config bms;
@@ -1473,5 +1474,34 @@ typedef struct __attribute__((packed)) {
 
 	uint8_t dummy;
 } backup_data;
+
+// ============================================================================
+// JAH POISONING SENTINELS FOR WRSM DYNAMIC FOC
+// Blocks compile if core FOC math files use old static or precalculated values
+// ============================================================================
+
+// --- 1. Old Static Configuration Parameters (mc_configuration) ---
+// Replaced by: motor->m_injected_flux
+#define foc_motor_flux_linkage          STALE_CFG_FOC_MOTOR_FLUX_LINKAGE_ERROR
+
+// Replaced by: motor->m_injected_l_avg
+#define foc_motor_l                     STALE_CFG_FOC_MOTOR_L_ERROR
+
+// Replaced by: motor->m_injected_ld_lq_diff
+#define foc_motor_ld_lq_diff            STALE_CFG_FOC_MOTOR_LD_LQ_DIFF_ERROR
+
+
+// --- 2. Old Startup Precalculated Parameters (motor_all_state_t) ---
+// Replaced by: motor->m_injected_ld
+#define p_ld                            STALE_PRECALC_P_LD_ERROR
+
+// Replaced by: motor->m_injected_lq
+#define p_lq                            STALE_PRECALC_P_LQ_ERROR
+
+// Replaced by: motor->m_injected_p_inv_ld_lq
+#define p_inv_ld_lq                     STALE_PRECALC_P_INV_LD_LQ_ERROR
+
+// Replaced by: motor->m_injected_p_v2_v3_inv_avg_half
+#define p_v2_v3_inv_avg_half            STALE_PRECALC_P_V2_V3_INV_AVG_HALF_ERROR
 
 #endif /* DATATYPES_H_ */

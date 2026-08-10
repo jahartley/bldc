@@ -351,63 +351,63 @@ typedef struct {
     float base_flux;
     float base_ld;
     float base_lq;
-    float base_l_avg;
+    float base_l;
     float base_ld_lq_diff;
     float base_inv_ld;
     float base_inv_lq;
-    float base_p_inv_ld_lq;
+    //float base_p_inv_ld_lq;
     
     // --- PRECOMPUTED 1-CYCLE MULTIPLY SLOPES ---
     float slope_flux;
     float slope_ld;
     float slope_lq;
-    float slope_l_avg;
+    float slope_l;
     float slope_ld_lq_diff;
     float slope_inv_ld;
     float slope_inv_lq;
-    float slope_p_inv_ld_lq;
+    //float slope_p_inv_ld_lq;
 } if_lookup_row_t;
 
 static const if_lookup_row_t mgu_if_table[MGU_LOOKUP_SECTORS] = {
     // --- ROW 0: OVERCURRENT CEILING TRACKING (& ANCHOR LIMIT >= 2.92A) ---
     {
         .lower_bound_if = 2.92f,
-        .base_flux = 0.01320000f, .base_ld = 0.0000140900f, .base_lq = 0.0000243500f, .base_l_avg = 0.0000192200f, .base_ld_lq_diff = 0.0000102600f,
-        .base_inv_ld = 70972.3203125f, .base_inv_lq = 41067.7617188f, .base_p_inv_ld_lq = -29904.5585938f,
-        .slope_flux = 0.00000000f, .slope_ld = 0.00000000f, .slope_lq = 0.00000000f, .slope_l_avg = 0.00000000f, .slope_ld_lq_diff = 0.00000000f,
-        .slope_inv_ld = 0.00000000f, .slope_inv_lq = 0.00000000f, .slope_p_inv_ld_lq = 0.00000000f
+        .base_flux = 0.01320000f, .base_ld = 0.0000140900f, .base_lq = 0.0000243500f, .base_l = 0.0000192200f, .base_ld_lq_diff = 0.0000102600f,
+        .base_inv_ld = 70972.3203125f, .base_inv_lq = 41067.7617188f, 
+        .slope_flux = 0.00000000f, .slope_ld = 0.00000000f, .slope_lq = 0.00000000f, .slope_l = 0.00000000f, .slope_ld_lq_diff = 0.00000000f,
+        .slope_inv_ld = 0.00000000f, .slope_inv_lq = 0.00000000f
     },
     // --- ROW 1: INTERVAL SECTOR 2.00A TO 2.92A ---
     {
         .lower_bound_if = 2.00f,
-        .base_flux = 0.01241000f, .base_ld = 0.0000160900f, .base_lq = 0.0000281500f, .base_l_avg = 0.0000221200f, .base_ld_lq_diff = 0.0000120600f,
-        .base_inv_ld = 62150.4023438f, .base_inv_lq = 35523.9765625f, .base_p_inv_ld_lq = -26626.4257812f,
-        .slope_flux = 0.00085870f, .slope_ld = -0.0000021739f, .slope_lq = -0.0000041304f, .slope_l_avg = -0.0000031522f, .slope_ld_lq_diff = -0.0000019565f,
-        .slope_inv_ld = 9589.0410156f, .slope_inv_lq = 6025.8535156f, .slope_p_inv_ld_lq = -3563.1879883f
+        .base_flux = 0.01241000f, .base_ld = 0.0000160900f, .base_lq = 0.0000281500f, .base_l = 0.0000221200f, .base_ld_lq_diff = 0.0000120600f,
+        .base_inv_ld = 62150.4023438f, .base_inv_lq = 35523.9765625f, 
+        .slope_flux = 0.00085870f, .slope_ld = -0.0000021739f, .slope_lq = -0.0000041304f, .slope_l = -0.0000031522f, .slope_ld_lq_diff = -0.0000019565f,
+        .slope_inv_ld = 9589.0410156f, .slope_inv_lq = 6025.8535156f, 
     },
     // --- ROW 2: INTERVAL SECTOR 1.00A TO 2.00A ---
     {
         .lower_bound_if = 1.00f,
-        .base_flux = 0.01008000f, .base_ld = 0.0000273400f, .base_lq = 0.0000431600f, .base_l_avg = 0.0000352500f, .base_ld_lq_diff = 0.0000158200f,
-        .base_inv_ld = 36576.4453125f, .base_inv_lq = 23169.6015625f, .base_p_inv_ld_lq = -13406.8437500f,
-        .slope_flux = 0.00233000f, .slope_ld = -0.0000112500f, .slope_lq = -0.0000150100f, .slope_l_avg = -0.0000131300f, .slope_ld_lq_diff = -0.0000037600f,
-        .slope_inv_ld = 25573.9570312f, .slope_inv_lq = 12354.3750000f, .slope_p_inv_ld_lq = -13219.5820312f
+        .base_flux = 0.01008000f, .base_ld = 0.0000273400f, .base_lq = 0.0000431600f, .base_l = 0.0000352500f, .base_ld_lq_diff = 0.0000158200f,
+        .base_inv_ld = 36576.4453125f, .base_inv_lq = 23169.6015625f, 
+        .slope_flux = 0.00233000f, .slope_ld = -0.0000112500f, .slope_lq = -0.0000150100f, .slope_l = -0.0000131300f, .slope_ld_lq_diff = -0.0000037600f,
+        .slope_inv_ld = 25573.9570312f, .slope_inv_lq = 12354.3750000f, 
     },
     // --- ROW 3: INTERVAL SECTOR 0.50A TO 1.00A ---
     {
         .lower_bound_if = 0.50f,
-        .base_flux = 0.00680000f, .base_ld = 0.0000298550f, .base_lq = 0.0000461250f, .base_l_avg = 0.0000379900f, .base_ld_lq_diff = 0.0000162700f,
-        .base_inv_ld = 33495.2265625f, .base_inv_lq = 21680.2167969f, .base_p_inv_ld_lq = -11815.0107422f,
-        .slope_flux = 0.00656000f, .slope_ld = -0.0000050300f, .slope_lq = -0.0000059300f, .slope_l_avg = -0.0000054800f, .slope_ld_lq_diff = -0.0000009000f,
-        .slope_inv_ld = 6162.4370117f, .slope_inv_lq = 2978.7695312f, .slope_p_inv_ld_lq = -3183.6660156f
+        .base_flux = 0.00680000f, .base_ld = 0.0000298550f, .base_lq = 0.0000461250f, .base_l = 0.0000379900f, .base_ld_lq_diff = 0.0000162700f,
+        .base_inv_ld = 33495.2265625f, .base_inv_lq = 21680.2167969f, 
+        .slope_flux = 0.00656000f, .slope_ld = -0.0000050300f, .slope_lq = -0.0000059300f, .slope_l = -0.0000054800f, .slope_ld_lq_diff = -0.0000009000f,
+        .slope_inv_ld = 6162.4370117f, .slope_inv_lq = 2978.7695312f, 
     },
     // --- ROW 4: FLOOR CEILING TRANSITION (0.00A TO 0.50A & NEGATIVE CURRENT BOUNDARY PROTECTION) ---
     {
         .lower_bound_if = 0.00f,
-        .base_flux = 0.00308000f, .base_ld = 0.0000301300f, .base_lq = 0.0000460700f, .base_l_avg = 0.0000381000f, .base_ld_lq_diff = 0.0000159400f,
-        .base_inv_ld = 33189.5117188f, .base_inv_lq = 21706.0996094f, .base_p_inv_ld_lq = -11483.4121094f,
-        .slope_flux = 0.00744000f, .slope_ld = -0.0000005500f, .slope_lq = 0.0000001100f, .slope_l_avg = -0.0000002200f, .slope_ld_lq_diff = 0.0000006600f,
-        .slope_inv_ld = 611.4300537f, .slope_inv_lq = -51.7656250f, .slope_p_inv_ld_lq = -663.1945801f
+        .base_flux = 0.00308000f, .base_ld = 0.0000301300f, .base_lq = 0.0000460700f, .base_l = 0.0000381000f, .base_ld_lq_diff = 0.0000159400f,
+        .base_inv_ld = 33189.5117188f, .base_inv_lq = 21706.0996094f, 
+        .slope_flux = 0.00744000f, .slope_ld = -0.0000005500f, .slope_lq = 0.0000001100f, .slope_l = -0.0000002200f, .slope_ld_lq_diff = 0.0000006600f,
+        .slope_inv_ld = 611.4300537f, .slope_inv_lq = -51.7656250f, 
     }
 };
 

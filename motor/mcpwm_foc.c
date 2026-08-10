@@ -52,7 +52,6 @@ static volatile motor_all_state_t m_motor_2;
 static volatile int m_isr_motor = 0;
 
 // Private functions
-static void update_hybrid_mgu_parameters(motor_all_state_t *motor, float filtered_if);
 static void control_current(motor_all_state_t *motor, float dt);
 static void update_valpha_vbeta(motor_all_state_t *motor, float mod_alpha, float mod_beta, float voltage_normalize);
 static void stop_pwm_hw(motor_all_state_t *motor);
@@ -131,11 +130,15 @@ static volatile bool pid_thd_stop;
 #define M_MOTOR(is_second_motor)  (((void)is_second_motor), &m_motor_1)
 #endif
 
+// Static ring buffer for EXT_ADC field current sensor filtering
+static float m_if_volts_buffer[4];
+static uint8_t m_if_buffer_idx = 0;
+
 // JAH added precomputed value look up ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // Fast Parameter Injection Loop (Executes at 20kHz - 30kHz inside FOC Interrupt)
-static void update_hybrid_mgu_parameters(motor_all_state_t *motor, float filtered_if) {
+void update_hybrid_mgu_parameters(motor_all_state_t *motor) {
     int target_row = MGU_LOOKUP_SECTORS - 1; // Fallback to the 0.00A row
-	
+	float filtered_if = motor->m_field_current;
     // Sequential search from highest to lowest. 
     // Breaks instantly on the first true condition, optimizing for high-load cranking/running states.
     for (int i = 0; i < MGU_LOOKUP_SECTORS - 1; i++) {
@@ -161,11 +164,12 @@ static void update_hybrid_mgu_parameters(motor_all_state_t *motor, float filtere
     motor->m_injected_flux         = row->base_flux         + (shared_delta * row->slope_flux);
     motor->m_injected_ld           = row->base_ld           + (shared_delta * row->slope_ld);
     motor->m_injected_lq           = row->base_lq           + (shared_delta * row->slope_lq);
-    motor->m_injected_l_avg        = row->base_l_avg        + (shared_delta * row->slope_l_avg);
+    motor->m_injected_l            = row->base_l            + (shared_delta * row->slope_l);
     motor->m_injected_ld_lq_diff   = row->base_ld_lq_diff   + (shared_delta * row->slope_ld_lq_diff);
     motor->m_injected_inv_ld       = row->base_inv_ld       + (shared_delta * row->slope_inv_ld);
     motor->m_injected_inv_lq       = row->base_inv_lq       + (shared_delta * row->slope_inv_lq);
-    motor->m_injected_p_inv_ld_lq  = row->base_p_inv_ld_lq  + (shared_delta * row->slope_p_inv_ld_lq);
+    motor->m_injected_p_inv_ld_lq  = motor->m_injected_inv_lq - motor->m_injected_inv_ld;
+	motor->m_injected_p_v2_v3_inv_avg_half = 0.45f * (motor->m_injected_inv_lq + motor->m_injected_inv_ld);
 }
 
 
@@ -2843,6 +2847,44 @@ int mcpwm_foc_dc_cal(bool cal_undriven) {
 		m_motor_1.m_conf->foc_offsets_voltage_undriven[2] = voltage_sum[2];
 	}
 
+	// ============================================================================
+	// --- JAH added WRSM DYNAMIC ROTOR FIELD SENSOR DC CALIBRATION
+	// ============================================================================
+	float field_sum = 0.0f;
+	const int field_samples = 1000;
+	bool field_was_enabled = false;
+
+	// TODO - SET FIELD H BRIDGE ENABLE LOW!!! DELAY!!! THEN SAMPLE.
+	// get field_enabled control state, save in field_was_enabled.
+	// disable field here...
+	chThdSleepMicroseconds(200);
+
+	for (int cal_idx = 0; cal_idx < field_samples; cal_idx++) {
+		field_sum += ADC_VOLTS(ADC_IND_EXT);
+		chThdSleepMicroseconds(100); // 100µs delay to let ADC registers refresh
+	}
+
+	// TODD - RESTORE FIELD ENABLE TO PRIOR VALUE
+	// if (field_was_enabled) // CALL FIELD ENABLE...
+
+	float calibrated_field_offset = field_sum / (float)field_samples;
+
+	// Sane boundary guard check (ACS712 is ratiometric, typical 0A sits around 1.234V)
+	if (calibrated_field_offset > 0.8f && calibrated_field_offset < 2.0f) {
+		m_motor_1.m_conf->m_field_current_offset_v = calibrated_field_offset;
+	} else {
+		// Sensor missing or error detected: Keep uncalibrated configuration default
+		m_motor_1.m_conf->m_field_current_offset_v = FIELD_CURRENT_VOLTAGE_OFFSET_V;
+	}
+
+	// Bootstrap the 4-sample filter buffer with our freshly calibrated offset.
+	// This prevents immediate dynamic fault trips on the very first interrupt cycle!
+	for (int buf_idx = 0; buf_idx < 4; buf_idx++) {
+		m_if_volts_buffer[buf_idx] = m_motor_1.m_conf->m_field_current_offset_v;
+	}
+	m_if_buffer_idx = 0;
+	// --- END JAH addition =============================================================
+
 	// TODO: Make sure that offsets are no more than e.g. 5%, as larger values indicate hardware problems.
 
 	// Enable timeout
@@ -3278,6 +3320,49 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 	float ic = curr2;
 
 	UTILS_LP_FAST(state_now->v_bus, GET_INPUT_VOLTAGE(), 0.1);
+
+// --- JAH WRSM added FIELD CURRENT MEASUREMENT/FILTER
+	float if_volts_raw = ADC_VOLTS(ADC_IND_EXT);
+
+	m_if_volts_buffer[m_if_buffer_idx] = if_volts_raw;
+	m_if_buffer_idx = (m_if_buffer_idx + 1) & 3; // Masking index at power-of-2 boundary
+
+	float if_volts_sum = m_if_volts_buffer[0] + m_if_volts_buffer[1] + m_if_volts_buffer[2] + m_if_volts_buffer[3];
+	float if_volts_filtered = if_volts_sum * 0.25f;
+
+	static int field_fault_counter = 0;
+	if (if_volts_filtered < FIELD_CURRENT_FAULT_VOLTAGE_MIN || 
+		if_volts_filtered > FIELD_CURRENT_FAULT_VOLTAGE_MAX) {
+		field_fault_counter++;
+		if (field_fault_counter >= FIELD_CURRENT_FAULT_DEBOUNCE_CYCLES) {
+			// Trigger emergency stop and log DRV fault [8]
+			mc_interface_fault_stop(FAULT_CODE_DRV, is_second_motor, false);
+			return;
+		}
+	} else {
+		field_fault_counter = 0;
+	}
+
+	float filtered_if = (if_volts_filtered - FIELD_CURRENT_VOLTAGE_OFFSET_V) / FIELD_CURRENT_SENSOR_VOLTS_PER_AMP;
+
+
+	#if FIELD_CURRENT_SENSOR_UNI_DIRECTIONAL // [7]
+	if (filtered_if < 0.0f) {
+	filtered_if = 0.0f; // Clip negative offset drift noise
+	}
+	#endif
+
+
+	// --- 5. Commit states to motor struct for telemetry & vesc_tool graphing
+	motor_now->m_field_current = filtered_if;
+	// Note: set motor_now->m_field_duty here once your H-bridge driver is updating
+
+
+	// --- 6. Trigger high-speed FOC Parameter Lookup Injection [9]
+	update_hybrid_mgu_parameters(motor_now);	
+
+
+// --- JAH WRSM addition END
 
 	volatile float enc_ang = 0;
 	volatile bool encoder_is_being_used = false;

@@ -26,6 +26,16 @@ Field_Current_A,Max_ERPM,Bus_Voltage_V
 1.00,7900,14.2
 1.50,6540,14.2
 
+Drill spin testing:
+
+Drill_Speed,Field_Current_A,Field_Voltage_V,Electrical_Frequency_Hz,Line_to_Line_Vrms,Line_to_Line_Vpp,Average_DC_offset,Estimated_ERPM,Estimated_MGU_RPM,Estimated_K_e_ERPM,Estimated_K_e_MGU_RPM,Estimated_peak_phase_to_neutral_V,Field_Power_W
+Speed 1,0,0,84,1.62,5,,5040,630,0.321428571,2.571428571,1.322724461,0
+Speed 2,0,0,253,4.8,14.2,0.181,15180,1897.5,0.316205534,2.529644269,3.919183588,0
+Speed 1,0.5,2.88,83.3,3.41,12.4,0.254,4998,624.75,0.682272909,5.458183273,2.784253341,1.44
+Speed 1,1.07,6,80.6,5.96,19.2,0.263,4836,604.5,1.23242349,9.859387924,4.866319622,6.42
+Speed 1,2,11.22,80.6,7.67,24,0.276,4836,604.5,1.586021505,12.68817204,6.262528776,22.44
+Speed 1,3,16.88,80.6,8.04,25.8,0.267,4836,604.5,1.662531017,13.30024814,6.564632511,50.64
+
 
 
 ## Control Strategy
@@ -34,23 +44,16 @@ I want to fully integrate field control into the FOC system. By using my bench s
 - I_f ADC. When the 20-30kHz ADC DMA runs for the group containing the EXT_ADC pin, we should do a 2 or 3 sample moving average filter on the adc value, convert to current, lookup and update our values in the motor state struct.
 
 Values requiring update list:
-Group 1: The Raw Lookups (Direct from your 1kHz Table)
-These three variables must be directly read and linearly interpolated from your bench data based on your field current (If):
-•	flux_linkage (lambda): The total magnetic flux linking the stator phases, which represents the combined strength of the permanent magnets and the field coil.
-•	Motor_L (L_base): The baseline or average stator inductance, mathematically representing (Ld + Lq) / 2.
-•	Motor_ld_lq_diff (Delta L): The saliency indicator, which is the physical difference between the q-axis and d-axis inductances (Lq - Ld).
-Group 2: The Derived Core FOC Variables (Recomputed from Lookups)
-Your code must immediately calculate these explicit axis inductances right after updating the raw lookups:
-•	Ld (d-axis inductance): Calculated as: Motor_L minus (Motor_ld_lq_diff / 2). It dictates the motor's behavior along the magnetic flux axis.
-•	Lq (q-axis inductance): Calculated as: Motor_L plus (Motor_ld_lq_diff / 2). It dictates the motor's behavior along the torque-producing axis.
-Group 3: Real-Time Controller Gain Adaptations (For Current Loop Stability)
-Because physical inductance drops by half at high field current, you must scale your Proportional gains to prevent current loop instability:
-•	Current_Loop_Kp_d: Calculated as: Ld multiplied by your desired current loop bandwidth in radians per second.
-•	Current_Loop_Kp_q: Calculated as: Lq multiplied by your desired current loop bandwidth in radians per second.
-Group 4: Voltage Decoupling Terms (Cross-Coupling Compensation)
-These are feedforward terms calculated during the high-speed voltage generation phase to keep the d and q axes from corrupting each other at high speeds:
-•	Vd_decouple: Calculated as: negative electrical speed (omega_e) multiplied by Lq multiplied by Iq.
-•	Vq_decouple: Calculated as: electrical speed (omega_e) multiplied by the quantity (Ld multiplied by Id plus flux_linkage).
+// --- JAH ADDED INJECTED LOOKUP VARIABLES FOR WRSM DYNAMIC FOC ---
+	float m_injected_flux;         // Live stator flux linkage (lambda) from initial table of vesc motor testing[1, 2]
+	float m_injected_ld;           // Live d-axis inductance (Ld) [2, 5]
+	float m_injected_lq;           // Live q-axis inductance (Lq) [2, 6]
+	float m_injected_l;            // Live stator inductance (Ld+Lq)/2 from initial table of vesc motor testing [2, 5]
+	float m_injected_ld_lq_diff;   // Live saliency indicator (Lq - Ld) from initial table of vesc motor testing [2, 5]
+	float m_injected_inv_ld;       // Live inverse d-axis inductance (1 / Ld) [3, 7]
+	float m_injected_inv_lq;       // Live inverse q-axis inductance (1 / Lq) [3, 7]
+	float m_injected_p_inv_ld_lq;  // Live inverse saliency difference (1/Lq - 1/Ld) [3, 7]
+	float m_injected_p_v2_v3_inv_avg_half; 	// Live HFI average of inverse d and q axis inductances: 0.5 * (1/Ld + 1/Lq)
 
 
 EQUATION/FUNCTION Review.

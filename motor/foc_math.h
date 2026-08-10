@@ -245,6 +245,22 @@ typedef struct {
 	float p_duty_norm;
 	float p_fs;
 	float p_dt;
+
+	// --- JAH ADDED INJECTED LOOKUP VARIABLES FOR WRSM DYNAMIC FOC ---
+	float m_injected_flux;         // Live stator flux linkage (lambda)
+	float m_injected_ld;           // Live d-axis inductance (Ld)
+	float m_injected_lq;           // Live q-axis inductance (Lq)
+	float m_injected_l;        	   // Live stator inductance (L)
+	float m_injected_ld_lq_diff;   // Live saliency indicator (Lq - Ld)
+	float m_injected_inv_ld;       // Live inverse d-axis inductance (1 / Ld)
+	float m_injected_inv_lq;       // Live inverse q-axis inductance (1 / Lq)
+	float m_injected_p_inv_ld_lq;  // Live inverse saliency difference (1/Lq - 1/Ld)
+	float m_injected_p_v2_v3_inv_avg_half; 	// Live HFI average of inverse d and q axis inductances: 0.5 * (1/Ld + 1/Lq)
+
+	// --- JAH ADDED FIELD CONTROL VARIABLES
+	float m_field_current;
+	float m_field_current_target;
+	float m_field_duty;
 } motor_all_state_t;
 
 // Functions
@@ -261,5 +277,6 @@ float foc_correct_hall(float angle, float dt, motor_all_state_t *motor, int hall
 void foc_run_fw(motor_all_state_t *motor, float dt);
 void foc_hfi_adjust_angle(float ang_err, motor_all_state_t *motor, float dt);
 void foc_precalc_values(motor_all_state_t *motor);
+void update_hybrid_mgu_parameters(motor_all_state_t *motor);
 
 #endif /* FOC_MATH_H_ */

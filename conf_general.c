@@ -464,6 +464,14 @@ __attribute__((section(".text2"))) void conf_general_read_mc_configuration(mc_co
 	if (!is_ok) {
 		confgenerator_set_defaults_mcconf(conf);
 	}
+
+	// ============================================================================
+    // JAH: Safe Fallback Bootstrap for Field Current Offset
+    // Guarantees offset is valid even if reading from old EEPROM or default generator
+    // ============================================================================
+    if (conf->m_field_current_offset_v < 0.5f || conf->m_field_current_offset_v > 2.5f) {
+        conf->m_field_current_offset_v = FIELD_CURRENT_VOLTAGE_OFFSET_V; // Default 1.234V [1]
+    }
 }
 
 /**
