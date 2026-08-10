@@ -3381,7 +3381,7 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 		field_fault_counter = 0;
 	}
 
-	float filtered_if = (if_volts_filtered - FIELD_CURRENT_VOLTAGE_OFFSET_V) / FIELD_CURRENT_SENSOR_VOLTS_PER_AMP;
+	float filtered_if = (if_volts_filtered - motor_now->m_conf->m_field_current_offset_v) / FIELD_CURRENT_SENSOR_VOLTS_PER_AMP;
 
 
 	#if FIELD_CURRENT_SENSOR_UNI_DIRECTIONAL // [7]
