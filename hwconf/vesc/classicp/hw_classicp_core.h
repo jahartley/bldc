@@ -165,13 +165,22 @@
 #define HW_ADC_EXT5_GPIO		GPIOB
 #define HW_ADC_EXT5_PIN			1
 
+// --- JAH added KILL UART TO REUSE PINS, POISON THE DEFINES AT BOTTOM OF THIS FILE.
 // UART Peripheral
-#define HW_UART_DEV				SD3
-#define HW_UART_GPIO_AF			GPIO_AF_USART3
-#define HW_UART_TX_PORT			GPIOB
-#define HW_UART_TX_PIN			10
-#define HW_UART_RX_PORT			GPIOB
-#define HW_UART_RX_PIN			11
+// #define HW_UART_DEV				SD3
+// #define HW_UART_GPIO_AF			GPIO_AF_USART3
+// #define HW_UART_TX_PORT			GPIOB
+// #define HW_UART_TX_PIN			10
+// #define HW_UART_RX_PORT			GPIOB
+// #define HW_UART_RX_PIN			11
+
+// --- JAH added WRSM H-BRIDGE ROTOR EXCITAL CONTROLS ---
+#define HW_FIELD_PWM_GPIO             GPIOB
+#define HW_FIELD_PWM_PIN              6
+#define HW_FIELD_PWM_AF               GPIO_AF_TIM4
+
+#define HW_FIELD_EN_GPIO              GPIOB
+#define HW_FIELD_EN_PIN               10
 
 // Permanent UART Peripheral (SWD/ESP)
 // TODO: Encoder UART
@@ -183,23 +192,25 @@
 //#define HW_UART_P_RX_PORT		GPIOC
 //#define HW_UART_P_RX_PIN		11
 
+// --- JAH added KILL ICU TO REUSE PINS, POISON THE DEFINES AT BOTTOM OF THIS FILE.
 // ICU Peripheral for servo decoding
-#define HW_USE_SERVO_TIM4
-#define HW_ICU_TIMER			TIM4
-#define HW_ICU_TIM_CLK_EN()		RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM4, ENABLE)
-#define HW_ICU_DEV				ICUD4
-#define HW_ICU_CHANNEL			ICU_CHANNEL_1
-#define HW_ICU_GPIO_AF			GPIO_AF_TIM4
-#define HW_ICU_GPIO				GPIOB
-#define HW_ICU_PIN				6
+// #define HW_USE_SERVO_TIM4
+// #define HW_ICU_TIMER			TIM4
+// #define HW_ICU_TIM_CLK_EN()		RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM4, ENABLE)
+// #define HW_ICU_DEV				ICUD4
+// #define HW_ICU_CHANNEL			ICU_CHANNEL_1
+// #define HW_ICU_GPIO_AF			GPIO_AF_TIM4
+// #define HW_ICU_GPIO				GPIOB
+// #define HW_ICU_PIN				6
 
+// --- JAH added KILL I2C TO REUSE PINS, POISON THE DEFINES AT THE BOTTOM OF THIS FILE.
 // I2C Peripheral
-#define HW_I2C_DEV				I2CD2
-#define HW_I2C_GPIO_AF			GPIO_AF_I2C2
-#define HW_I2C_SCL_PORT			GPIOB
-#define HW_I2C_SCL_PIN			10
-#define HW_I2C_SDA_PORT			GPIOB
-#define HW_I2C_SDA_PIN			11
+// #define HW_I2C_DEV				I2CD2
+// #define HW_I2C_GPIO_AF			GPIO_AF_I2C2
+// #define HW_I2C_SCL_PORT			GPIOB
+// #define HW_I2C_SCL_PIN			10
+// #define HW_I2C_SDA_PORT			GPIOB
+// #define HW_I2C_SDA_PIN			11
 
 // Hall/encoder pins
 #define HW_HALL_ENC_GPIO1		GPIOC
@@ -217,17 +228,18 @@
 #define HW_ENC_TIM_ISR_CH		TIM3_IRQn
 #define HW_ENC_TIM_ISR_VEC		TIM3_IRQHandler
 
+// --- JAH added KILL SPI1 TO REUSE PINS, POISON THE DEFINES AT THE BOTTOM OF THIS FILE.
 // SPI pins
-#define HW_SPI_DEV				SPID1
-#define HW_SPI_GPIO_AF			GPIO_AF_SPI1
-#define HW_SPI_PORT_NSS			GPIOB
-#define HW_SPI_PIN_NSS			11
-//#define HW_SPI_PORT_SCK			GPIOA
-//#define HW_SPI_PIN_SCK			5
-#define HW_SPI_PORT_MOSI		GPIOB
-#define HW_SPI_PIN_MOSI			10
-#define HW_SPI_PORT_MISO		GPIOA
-#define HW_SPI_PIN_MISO			6
+// #define HW_SPI_DEV				SPID1
+// #define HW_SPI_GPIO_AF			GPIO_AF_SPI1
+// #define HW_SPI_PORT_NSS			GPIOB
+// #define HW_SPI_PIN_NSS			11
+// //#define HW_SPI_PORT_SCK			GPIOA
+// //#define HW_SPI_PIN_SCK			5
+// #define HW_SPI_PORT_MOSI		GPIOB
+// #define HW_SPI_PIN_MOSI			10
+// #define HW_SPI_PORT_MISO		GPIOA
+// #define HW_SPI_PIN_MISO			6
 
 // IMU
 #define IMU_DEV				IMU_DEV_LSM6DS3
@@ -294,6 +306,8 @@
 #define HW_LIM_TEMP_FET			-40.0, 110.0
 
 // JAH ADDED SETTING OVERRIDES ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
 // Force default observer type to MXLEMMING_LAMBDA_COMP
 #ifdef MCCONF_FOC_OBSERVER_TYPE
 #undef MCCONF_FOC_OBSERVER_TYPE
@@ -418,5 +432,153 @@ bool smart_switch_is_pressed(void);
 void smart_switch_shut_down(void);
 void smart_switch_keep_on(void);
 float hw_classicp_get_temp(void);
+
+
+// ============================================================================
+// --- JAH added WRSM FORK POISONING SENTINELS FOR COMM PORT RECLAIM
+// Prevents compile if any file attempts to start or use USART3 / SD3
+// ============================================================================
+#ifdef HW_UART_DEV
+#undef HW_UART_DEV
+#endif
+#define HW_UART_DEV             BLOCKED_USART3_DEV_ERROR
+
+#ifdef SD3
+#undef SD3
+#endif
+#define SD3                     BLOCKED_USART3_SD3_ERROR
+
+#ifdef HW_UART_TX_PORT
+#undef HW_UART_TX_PORT
+#endif
+#define HW_UART_TX_PORT         BLOCKED_GPIOB10_TX_PORT_ERROR
+
+#ifdef HW_UART_RX_PORT
+#undef HW_UART_RX_PORT
+#endif
+#define HW_UART_RX_PORT         BLOCKED_GPIOB11_RX_PORT_ERROR
+
+#ifdef HW_UART_TX_PIN
+#undef HW_UART_TX_PIN
+#endif
+#define HW_UART_TX_PIN         BLOCKED_GPIOB10_TX_PIN_ERROR
+
+#ifdef HW_UART_RX_PIN
+#undef HW_UART_RX_PIN
+#endif
+#define HW_UART_RX_PIN         BLOCKED_GPIOB11_RX_PIN_ERROR
+
+// ============================================================================
+// --- JAH added WRSM FORK POISONING SENTINELS FOR PPM / SERVO TIM4 RECLAIM
+// Prevents compile if any file attempts to configure or use TIM4 for servo/ppm input
+// ============================================================================
+#ifdef HW_USE_SERVO_TIM4
+#undef HW_USE_SERVO_TIM4
+#endif
+#define HW_USE_SERVO_TIM4             BLOCKED_TIM4_REPURPOSED_FOR_WRSM_FIELD_PWM
+
+#ifdef HW_ICU_TIMER
+#undef HW_ICU_TIMER
+#endif
+#define HW_ICU_TIMER                  BLOCKED_TIM4_REPURPOSED_FOR_WRSM_FIELD_PWM
+
+#ifdef HW_ICU_TIM_CLK_EN
+#undef HW_ICU_TIM_CLK_EN
+#endif
+#define HW_ICU_TIM_CLK_EN()           BLOCKED_TIM4_REPURPOSED_FOR_WRSM_FIELD_PWM_CLK
+
+#ifdef HW_ICU_DEV
+#undef HW_ICU_DEV
+#endif
+#define HW_ICU_DEV                    BLOCKED_ICUD4_REPURPOSED_FOR_WRSM_FIELD_PWM
+
+#ifdef HW_ICU_CHANNEL
+#undef HW_ICU_CHANNEL
+#endif
+#define HW_ICU_CHANNEL                BLOCKED_ICU_CHANNEL_REPURPOSED_FOR_WRSM_FIELD_PWM
+
+#ifdef HW_ICU_GPIO_AF
+#undef HW_ICU_GPIO_AF
+#endif
+#define HW_ICU_GPIO_AF                BLOCKED_TIM4_AF_REPURPOSED_FOR_WRSM_FIELD_PWM
+
+#ifdef HW_ICU_GPIO
+#undef HW_ICU_GPIO
+#endif
+#define HW_ICU_GPIO                   BLOCKED_GPIOB_6_REPURPOSED_FOR_WRSM_FIELD_PWM
+
+#ifdef HW_ICU_PIN
+#undef HW_ICU_PIN
+#endif
+#define HW_ICU_PIN                    BLOCKED_PIN_6_REPURPOSED_FOR_WRSM_FIELD_PWM
+
+// ============================================================================
+// --- JAH added WRSM FORK POISONING SENTINELS FOR I2C2 PORT RECLAIM
+// Prevents compile if any background app tries to use I2C2 on GPIOB_10 / GPIOB_11
+// ============================================================================
+#ifdef HW_I2C_DEV
+#undef HW_I2C_DEV
+#endif
+#define HW_I2C_DEV              BLOCKED_I2C2_REPURPOSED_FOR_WRSM_FIELD_EN
+
+#ifdef HW_I2C_GPIO_AF
+#undef HW_I2C_GPIO_AF
+#endif
+#define HW_I2C_GPIO_AF          BLOCKED_I2C2_REPURPOSED_FOR_WRSM_FIELD_EN
+
+#ifdef HW_I2C_SCL_PORT
+#undef HW_I2C_SCL_PORT
+#endif
+#define HW_I2C_SCL_PORT         BLOCKED_GPIOB10_REPURPOSED_FOR_WRSM_FIELD_EN
+
+#ifdef HW_I2C_SCL_PIN
+#undef HW_I2C_SCL_PIN
+#endif
+#define HW_I2C_SCL_PIN          BLOCKED_PIN_10_REPURPOSED_FOR_WRSM_FIELD_EN
+
+#ifdef HW_I2C_SDA_PORT
+#undef HW_I2C_SDA_PORT
+#endif
+#define HW_I2C_SDA_PORT         BLOCKED_GPIOB11_REPURPOSED_FOR_WRSM_RX_GPIO
+
+#ifdef HW_I2C_SDA_PIN
+#undef HW_I2C_SDA_PIN
+#endif
+#define HW_I2C_SDA_PIN          BLOCKED_PIN_11_REPURPOSED_FOR_WRSM_RX_GPIO
+
+// ============================================================================
+// --- JAH added WRSM FORK POISONING SENTINELS FOR SPI1 PORT RECLAIM
+// Prevents compile if any background app tries to use SPI1 on GPIOB_10 / GPIOB_11
+// ============================================================================
+#ifdef HW_SPI_DEV
+#undef HW_SPI_DEV
+#endif
+#define HW_SPI_DEV              BLOCKED_SPI1_REPURPOSED_FOR_WRSM_FIELD_EN
+
+#ifdef HW_SPI_GPIO_AF
+#undef HW_SPI_GPIO_AF
+#endif
+#define HW_SPI_GPIO_AF          BLOCKED_SPI1_REPURPOSED_FOR_WRSM_FIELD_EN
+
+#ifdef HW_SPI_PORT_NSS
+#undef HW_SPI_PORT_NSS
+#endif
+#define HW_SPI_PORT_NSS         BLOCKED_GPIOB11_REPURPOSED_FOR_WRSM_RX_GPIO
+
+#ifdef HW_SPI_PIN_NSS
+#undef HW_SPI_PIN_NSS
+#endif
+#define HW_SPI_PIN_NSS          BLOCKED_PIN_11_REPURPOSED_FOR_WRSM_RX_GPIO
+
+#ifdef HW_SPI_PORT_MOSI
+#undef HW_SPI_PORT_MOSI
+#endif
+#define HW_SPI_PORT_MOSI        BLOCKED_GPIOB10_REPURPOSED_FOR_WRSM_FIELD_EN
+
+#ifdef HW_SPI_PIN_MOSI
+#undef HW_SPI_PIN_MOSI
+#endif
+#define HW_SPI_PIN_MOSI         BLOCKED_PIN_10_REPURPOSED_FOR_WRSM_FIELD_EN
+// ============================================================================
 
 #endif /* HW_CLASSICP_CORE_H_ */

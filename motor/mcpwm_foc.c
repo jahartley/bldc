@@ -445,8 +445,11 @@ void mcpwm_foc_init(mc_configuration *conf_m1, mc_configuration *conf_m2) {
 	DMA_InitTypeDef DMA_InitStructure;
 	ADC_InitTypeDef ADC_InitStructure;
 
-	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_DMA2 | RCC_AHB1Periph_GPIOA | RCC_AHB1Periph_GPIOC, ENABLE);
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_DMA2 | RCC_AHB1Periph_GPIOA | RCC_AHB1Periph_GPIOB | RCC_AHB1Periph_GPIOC, ENABLE);
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1 | RCC_APB2Periph_ADC2 | RCC_APB2Periph_ADC3, ENABLE);
+
+	// --- JAH added Enable APB1 Clock for Timer 4 (Field PWM)
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM4, ENABLE);
 
 	dmaStreamAllocate(STM32_DMA_STREAM(STM32_DMA_STREAM_ID(2, 4)),
 					  5,
@@ -528,6 +531,38 @@ void mcpwm_foc_init(mc_configuration *conf_m1, mc_configuration *conf_m2) {
 	CURRENT_FILTER_ON_M2();
 	ENABLE_GATE();
 	DCCAL_OFF();
+
+	// ============================================================================
+	// --- JAH added WRSM ROTOR EXCITAION HARDWARE INITIALIZATION
+	// ============================================================================
+	// Initialize BTS7960 Enable Pin on COMM TX (GPIOB_10) as HIGH-Z Safe Output
+	palSetPadMode(HW_FIELD_EN_GPIO, HW_FIELD_EN_PIN, PAL_MODE_OUTPUT_PUSHPULL | PAL_STM32_OSPEED_HIGHEST);
+	palClearPad(HW_FIELD_EN_GPIO, HW_FIELD_EN_PIN); // Ensure H-bridge is completely OFF at boot
+
+	// Initialize Reclaimed COMM RX Pin (GPIOB_11) as a GPIO Input (with internal Pull-Up)
+	//palSetPadMode(HW_RX_GPIO_PORT, HW_RX_GPIO_PIN, PAL_MODE_INPUT_PULLUP);
+
+	// Initialize PB6 (PPM Pin) as Alternate Function TIM4_CH1 for PWM
+	palSetPadMode(HW_FIELD_PWM_GPIO, HW_FIELD_PWM_PIN, PAL_MODE_ALTERNATE(HW_FIELD_PWM_AF) | PAL_STM32_OSPEED_HIGHEST);
+
+	// Setup TIM4 to generate 5kHz PWM (using standard ChibiOS PWM Driver 4)
+	static PWMConfig field_pwm_cfg = {
+		1000000,                    // 1 MHz PWM clock frequency
+		200,                        // Period = 200 ticks (1,000,000 / 200 = 5,000 Hz / 5kHz)
+		NULL,                       // No periodic callback
+		{
+			{PWM_OUTPUT_ACTIVE_HIGH, NULL}, // Channel 1 (GPIOB_6)
+			{PWM_OUTPUT_DISABLED, NULL},
+			{PWM_OUTPUT_DISABLED, NULL},
+			{PWM_OUTPUT_DISABLED, NULL}
+		},
+		0,
+		0
+	};
+	pwmStart(&PWMD4, &field_pwm_cfg);
+	pwmEnableChannel(&PWMD4, 0, 0); // Start with 0.0% duty cycle (unexcited rotor)
+	// ============================================================================
+
 #ifdef HW_USE_ALTERNATIVE_DC_CAL
 	m_dccal_done = true;
 #else
