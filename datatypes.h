@@ -36,6 +36,7 @@ typedef enum {
    MC_STATE_DETECTING,
    MC_STATE_RUNNING,
    MC_STATE_FULL_BRAKE,
+   MC_STATE_GENERATOR // Add this custom state for WRSM Active Rectifier Standby!
 } mc_state;
 
 typedef enum {

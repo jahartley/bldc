@@ -17,6 +17,14 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+/* 	JAH 20260811
+	Implement control for automotive WRSM belt starter alternator.
+
+	******** TODO REMINDER!
+	SEARCH FOR JAHTODOFIXME to find the TODOs
+	********
+*/
+
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -50,6 +58,29 @@ static volatile motor_all_state_t m_motor_1;
 static volatile motor_all_state_t m_motor_2;
 #endif
 static volatile int m_isr_motor = 0;
+// JAH added Safety interlock to prevent background threads from enabling the field during a fault
+static volatile bool m_field_enable_request = false; // User's desired state
+static volatile bool m_field_fault_locked = false;
+#define WRSM_FIELD_DISABLE() palClearPad(HW_FIELD_EN_GPIO, HW_FIELD_EN_PIN)
+
+// ============================================================================
+// --- JAH added WRSM ACTIVE RECTIFIER SHADOW TELEMETRY & STATES
+// ============================================================================
+typedef enum {
+    PHASE_STATE_HIGH_Z = 0,
+    PHASE_STATE_HS_ON,
+    PHASE_STATE_LS_ON
+} phase_state_t;
+
+static phase_state_t m_phase_state_a = PHASE_STATE_HIGH_Z;
+static phase_state_t m_phase_state_b = PHASE_STATE_HIGH_Z;
+static phase_state_t m_phase_state_c = PHASE_STATE_HIGH_Z;
+
+// Read-only variables to plot in the VESC Tool Realtime Plotter
+volatile float debug_shadow_gate_a = 0.0f;   //  1.0 = HS ON, -1.0 = LS ON,  0.0 = High-Z
+volatile float debug_observer_theta = 0.0f;  // Lock-synced observer angle [0 to 2*PI]
+// ============================================================================
+
 
 // Private functions
 static void control_current(motor_all_state_t *motor, float dt);
@@ -134,7 +165,7 @@ static volatile bool pid_thd_stop;
 static float m_if_volts_buffer[4];
 static uint8_t m_if_buffer_idx = 0;
 
-// JAH added precomputed value look up ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+// JAH added FUNCTIONS +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // Fast Parameter Injection Loop (Executes at 20kHz - 30kHz inside FOC Interrupt)
 void update_hybrid_mgu_parameters(motor_all_state_t *motor) {
     int target_row = MGU_LOOKUP_SECTORS - 1; // Fallback to the 0.00A row
@@ -172,6 +203,39 @@ void update_hybrid_mgu_parameters(motor_all_state_t *motor) {
 	motor->m_injected_p_v2_v3_inv_avg_half = 0.45f * (motor->m_injected_inv_lq + motor->m_injected_inv_ld);
 }
 
+void mcpwm_foc_set_field_duty(float duty) {
+    // 1. Clamp duty cycle between 0% and 100% for physical safety
+    if (duty < 0.0f) duty = 0.0f;
+    if (duty > 1.0f) duty = 1.0f;
+
+    // 2. Map float [0.0 - 1.0] to Timer ARR ticks (200 ticks = 5kHz at 1MHz)
+    uint32_t width = (uint32_t)(duty * 200.0f);
+    
+    // 3. Update the active duty cycle in the motor telemetry struct
+    m_motor_1.m_field_duty = duty;
+#ifdef HW_HAS_DUAL_MOTORS
+    m_motor_2.m_field_duty = duty;
+#endif
+
+    // 4. Write to Channel 0 (TIM4 CH1 / PB6)
+    pwmEnableChannel(&PWMD4, 0, width);
+}
+
+void mcpwm_foc_set_field_enable(bool enable) {
+    m_field_enable_request = enable;
+    
+    if (enable) {
+        if (!m_field_fault_locked) {
+            palSetPad(HW_FIELD_EN_GPIO, HW_FIELD_EN_PIN); // Turn on immediately
+        }
+    } else {
+		// Note: If false, we do NOT clear the pin here. 
+   		// We let the 1kHz timer thread handle the soft decay.
+		mcpwm_foc_set_field_duty(0.0f);
+	}    
+}
+
+// END JAH added FUNCTIONS ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 static void update_hfi_samples(foc_hfi_samples samples, volatile motor_all_state_t *motor) {
 	utils_sys_lock_cnt();
@@ -3408,30 +3472,27 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 		if_volts_filtered > FIELD_CURRENT_FAULT_VOLTAGE_MAX) {
 		field_fault_counter++;
 		if (field_fault_counter >= FIELD_CURRENT_FAULT_DEBOUNCE_CYCLES) {
-			// Trigger emergency stop and log DRV fault [8]
-			mc_interface_fault_stop(FAULT_CODE_DRV, is_second_motor, false);
-			return;
+			// SOME SORT OF FIELD CURRENT FAULT NEEDS TO BE SET HERE, PROBABLY DO SOFT FIELD STOP, set fault, lock out.
+			// JAHTODOFIXME
 		}
 	} else {
 		field_fault_counter = 0;
 	}
 
+	// JAHTODOFIXME Can we change the FIELD_CURRENT_SENSOR_VOLTS_PER_AMP so we can multiply here vs divide?
 	float filtered_if = (if_volts_filtered - motor_now->m_conf->m_field_current_offset_v) / FIELD_CURRENT_SENSOR_VOLTS_PER_AMP;
 
 
-	#if FIELD_CURRENT_SENSOR_UNI_DIRECTIONAL // [7]
+	#if FIELD_CURRENT_SENSOR_UNI_DIRECTIONAL
 	if (filtered_if < 0.0f) {
 	filtered_if = 0.0f; // Clip negative offset drift noise
 	}
 	#endif
 
-
-	// --- 5. Commit states to motor struct for telemetry & vesc_tool graphing
+	// Commit states to motor struct for telemetry & vesc_tool graphing
 	motor_now->m_field_current = filtered_if;
-	// Note: set motor_now->m_field_duty here once your H-bridge driver is updating
 
-
-	// --- 6. Trigger high-speed FOC Parameter Lookup Injection [9]
+	// Trigger high-speed FOC Parameter Lookup Injection
 	update_hybrid_mgu_parameters(motor_now);	
 
 
@@ -3833,7 +3894,7 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 			foc_run_fw(motor_now, dt);
 		}
 
-//		id_set_tmp -= motor_now->m_i_fw_set;
+		// id_set_tmp -= motor_now->m_i_fw_set;
 		id_set_tmp = utils_max_abs(id_set_tmp, -motor_now->m_i_fw_set);
 		iq_set_tmp -= SIGN(mod_q) * motor_now->m_i_fw_set * conf_now->foc_fw_q_current_factor;
 
@@ -4130,6 +4191,20 @@ static void timer_update(motor_all_state_t *motor, float dt) {
 		motor->m_res_temp_comp = conf_now->foc_motor_r;
 		motor->m_current_ki_temp_comp = conf_now->foc_current_ki;
 	}
+
+	// ============================================================================
+    // --- JAH addedWRSM SOFT DECAY CONTROLLER (1kHz Context)
+    // ============================================================================
+    if (!m_field_enable_request && palReadPad(HW_FIELD_EN_GPIO, HW_FIELD_EN_PIN)) {
+        // 1. Force duty cycle/current target to 0
+        mcpwm_foc_set_field_duty(0.0f);
+        
+        // 2. Monitor field current. Once it drops below 10% (approx 0.3A), disable the bridge
+        if (motor->m_field_current < 0.30f) { [2]
+            WRSM_FIELD_DISABLE(); // Safe to go HIGH-Z now!
+        }
+    }
+    // ============================================================================
 
 	// Check if it is time to stop the modulation. Notice that modulation is kept on as long as there is
 	// field weakening current.
@@ -5516,6 +5591,10 @@ static void start_pwm_hw(motor_all_state_t *motor) {
 }
 
 static void full_brake_hw(motor_all_state_t *motor) {
+	// --- JAH added field emergency stop and lockout.
+	WRSM_FIELD_DISABLE();
+	m_field_fault_locked = true;
+
 	if (motor == &m_motor_1) {
 		TIM_SelectOCxM(TIM1, TIM_Channel_1, TIM_ForcedAction_InActive);
 		TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);
@@ -5576,7 +5655,7 @@ static void full_brake_hw(motor_all_state_t *motor) {
 		ENABLE_BR_2();
 #endif
 	}
-
+	mcpwm_foc_set_field_duty(0.0f);
 	motor->m_pwm_mode = FOC_PWM_FULL_BRAKE;
 }
 
