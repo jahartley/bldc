@@ -63,24 +63,6 @@ static volatile bool m_field_enable_request = false; // User's desired state
 static volatile bool m_field_fault_locked = false;
 #define WRSM_FIELD_DISABLE() palClearPad(HW_FIELD_EN_GPIO, HW_FIELD_EN_PIN)
 
-// ============================================================================
-// --- JAH added WRSM ACTIVE RECTIFIER SHADOW TELEMETRY & STATES
-// ============================================================================
-typedef enum {
-    PHASE_STATE_HIGH_Z = 0,
-    PHASE_STATE_HS_ON,
-    PHASE_STATE_LS_ON
-} phase_state_t;
-
-static phase_state_t m_phase_state_a = PHASE_STATE_HIGH_Z;
-static phase_state_t m_phase_state_b = PHASE_STATE_HIGH_Z;
-static phase_state_t m_phase_state_c = PHASE_STATE_HIGH_Z;
-
-// Read-only variables to plot in the VESC Tool Realtime Plotter
-volatile float debug_shadow_gate_a = 0.0f;   //  1.0 = HS ON, -1.0 = LS ON,  0.0 = High-Z
-volatile float debug_observer_theta = 0.0f;  // Lock-synced observer angle [0 to 2*PI]
-// ============================================================================
-
 
 // Private functions
 static void control_current(motor_all_state_t *motor, float dt);

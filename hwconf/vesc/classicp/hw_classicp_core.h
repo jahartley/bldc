@@ -307,19 +307,31 @@
 
 // JAH ADDED SETTING OVERRIDES ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-
 // Force default observer type to MXLEMMING_LAMBDA_COMP
 #ifdef MCCONF_FOC_OBSERVER_TYPE
 #undef MCCONF_FOC_OBSERVER_TYPE
 #endif
-#define MCCONF_FOC_OBSERVER_TYPE        3
+#define MCCONF_FOC_OBSERVER_TYPE        3 // 3 = FOC_OBSERVER_MXLEMMING_LAMBDA_COMP
 
 // Set saturation compensation off.
 #ifdef MCCONF_FOC_SAT_COMP_MODE
 #undef MCCONF_FOC_SAT_COMP_MODE
 #endif
-#define MCCONF_FOC_SAT_COMP_MODE        0
+#define MCCONF_FOC_SAT_COMP_MODE        0 // 0 = SAT_COMP_DISABLED
 
+// Force MTPA Mode to 'IQ Target' by default
+#ifdef MCCONF_FOC_MTPA_MODE
+#undef MCCONF_FOC_MTPA_MODE
+#endif
+#define MCCONF_FOC_MTPA_MODE            1 // 1 = MTPA_MODE_IQ_TARGET
+
+// Force full Speed-compensated Cross-coupling & BEMF Decoupling by default
+#ifdef MCCONF_FOC_CC_DECOUPLING
+#undef MCCONF_FOC_CC_DECOUPLING
+#endif
+#define MCCONF_FOC_CC_DECOUPLING        3 // 3 = FOC_CC_DECOUPLING_CROSS_BEMF
+
+// Force default motor R value.
 #ifdef MCCONF_FOC_MOTOR_R
 #undef MCCONF_FOC_MOTOR_R
 #endif
