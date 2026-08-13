@@ -29,7 +29,7 @@ extern volatile float field_override_value;
  * @param  motor: Pointer to the active motor state structure containing telemetry.
  * @return None.
  */
-static inline void update_hybrid_mgu_parameters(motor_all_state_t *motor) {
+static inline void wrsm_update_foc_parameters(motor_all_state_t *motor) {
     int target_row = MGU_LOOKUP_SECTORS - 1;
     float filtered_if = motor->m_field_current;
 
