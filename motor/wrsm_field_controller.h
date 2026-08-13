@@ -15,15 +15,118 @@
 extern volatile bool field_override_active;
 extern volatile float field_override_value;
 
+// --- Level 1: Static Inline High-Speed parameter injection (Executed in FOC ISR) ---
 /**
- * 1 kHz Closed-Loop Rotor Field Controller.
- * Executes the battery-voltage-compensated PI loop to regulate the H-bridge duty cycle.
+ * @brief  High-speed, saturation-aware motor parameter injection.
+ * @note   Executed inside the ultra-critical 15 kHz FOC ADC DMA interrupt context.
+ *         Must be compiled as static inline to eliminate stack frame overhead.
  * 
- * Call this inside timer_update() in mcpwm_foc.c.
+ * This function performs a division-free, piecewise linear interpolation using the 
+ * 5-point calibration table. It dynamically injects real-time values for stator 
+ * flux linkage (psi), inductances (Ld, Lq, L), and inverse inductances directly into 
+ * the running FOC structures based on the measured rotor field current.
  * 
- * @param motor Pointer to the global motor state structure containing WRSM telemetry.
- * @param dt Timestep in seconds (0.001f for the 1 kHz timer loop).
+ * @param  motor: Pointer to the active motor state structure containing telemetry.
+ * @return None.
+ */
+static inline void update_hybrid_mgu_parameters(motor_all_state_t *motor) {
+    int target_row = MGU_LOOKUP_SECTORS - 1;
+    float filtered_if = motor->m_field_current;
+
+    for (int i = 0; i < MGU_LOOKUP_SECTORS - 1; i++) {
+        if (mgu_if_table[i].lower_bound_if <= filtered_if) {
+            target_row = i;
+            break;
+        }
+    }
+
+    const if_lookup_row_t *row = &mgu_if_table[target_row];
+    float shared_delta = filtered_if - row->lower_bound_if;
+    if (shared_delta < 0.0f) {
+        shared_delta = 0.0f;
+    }
+
+    motor->m_injected_flux         = row->base_flux         + (shared_delta * row->slope_flux);
+    motor->m_injected_ld           = row->base_ld           + (shared_delta * row->slope_ld);
+    motor->m_injected_lq           = row->base_lq           + (shared_delta * row->slope_lq);
+    motor->m_injected_l            = row->base_l            + (shared_delta * row->slope_l);
+    motor->m_injected_ld_lq_diff   = row->base_ld_lq_diff   + (shared_delta * row->slope_ld_lq_diff);
+    motor->m_injected_inv_ld       = row->base_inv_ld       + (shared_delta * row->slope_inv_ld);
+    motor->m_injected_inv_lq       = row->base_inv_lq       + (shared_delta * row->slope_inv_lq);
+    motor->m_injected_p_inv_ld_lq  = motor->m_injected_inv_lq - motor->m_injected_inv_ld;
+    motor->m_injected_p_v2_v3_inv_avg_half = 0.45f * (motor->m_injected_inv_lq + motor->m_injected_inv_ld);
+}
+
+// --- Level 2 Control Interface ---
+
+/**
+ * @brief  Sets the raw PWM duty cycle of the physical rotor field H-bridge.
+ * 
+ * Safely truncates the incoming floating-point duty cycle to [0.0, 1.0], maps 
+ * the value across the timer's hardware period width (200 ticks for the 5 kHz 
+ * carrier frequency), and writes it directly to the STM32 TIM4 compare register.
+ * 
+ * @param  motor: Pointer to the active motor state structure.
+ * @param  duty: Floating-point target duty cycle [0.0 to 1.0].
+ * @return None.
+ */
+void wrsm_set_field_duty(motor_all_state_t *motor, float duty);
+
+/**
+ * @brief  Controls the physical gate-driver enable line of the field H-bridge.
+ * 
+ * Manages the active-high PB10 driver enable pin (HW_FIELD_EN_PIN). 
+ * If enable is requested, it instantly asserts the pin unless a hardware fault 
+ * lockout is active. If disable is requested, it zeroes the duty cycle to trigger 
+ * the low-side soft-decay freewheeling sequence, leaving the physical shutdown 
+ * handling to the 1 kHz timer thread.
+ * 
+ * @param  motor: Pointer to the active motor state structure.
+ * @param  enable: True to assert gate driver; False to begin freewheeling shutdown.
+ * @return None.
+ */
+void wrsm_set_field_enable(motor_all_state_t *motor, bool enable);
+
+/**
+ * @brief  Safely manages the physical decay of the rotor's inductive magnetic field.
+ * @note   Called at 1 kHz inside the timer_update() thread in mcpwm_foc.c.
+ *         Must be compiled as static inline to prevent function call bloat.
+ * 
+ * To prevent destructive high-voltage inductive flyback spikes (> 40V) from punching 
+ * through the H-bridge silicon into the 12V rail, this function implements a low-side 
+ * freewheeling decay sequence. When a disable request is active, it holds the gate-driver 
+ * enable pin HIGH and forces 0% PWM duty cycle (turning both low-side MOSFETs ON). 
+ * The physical enable pin is only pulled LOW once current safely drops below 0.30 A.
+ * 
+ * @param  motor: Pointer to the active motor state structure containing telemetry.
+ * @return None.
+ */
+static inline void wrsm_manage_field_decay(motor_all_state_t *motor) {
+    // If the system has requested a shutdown, freewheel low-sides and wait for current decay
+    if (!m_field_enable_request && palReadPad(HW_FIELD_EN_GPIO, HW_FIELD_EN_PIN)) {
+        wrsm_set_field_duty(motor, 0.0f);
+        if (motor->m_field_current < 0.30f) {
+            WRSM_FIELD_DISABLE(); 
+        }
+    }
+}
+
+// --- Level 3 Control Interface ---
+/**
+ * @brief  Closed-loop PI regulator for WRSM rotor field current (I_f).
+ * @note   Executed at 1 kHz inside the timer_update() background thread.
+ * 
+ * Resolves high-level supervisor overrides versus the optimal copper loss solver. 
+ * Enforces live electrical boundaries to protect the vehicle:
+ *   1. Battery-compensated ceiling limit (prevents PI integrator windup).
+ *   2. Speed-compensated back-EMF safety clamp (prevents passive diode conduction).
+ * Computes the error, runs the PI regulation, and updates the physical PWM duty cycle.
+ * 
+ * @param  motor: Pointer to the active motor state structure.
+ * @param  dt: Integration timestep in seconds (0.001f for 1 kHz).
+ * @return None.
  */
 void wrsm_update_field_control(motor_all_state_t *motor, float dt);
+
 
 #endif /* WRSM_FIELD_CONTROLLER_H_ */
