@@ -43,15 +43,15 @@ I want to fully integrate field control into the FOC system. By using my bench s
 
 Values requiring update list:
 // --- JAH ADDED INJECTED LOOKUP VARIABLES FOR WRSM DYNAMIC FOC ---
-	float m_injected_flux;         // Live stator flux linkage (lambda) from initial table of vesc motor testing[1, 2]
-	float m_injected_ld;           // Live d-axis inductance (Ld) [2, 5]
-	float m_injected_lq;           // Live q-axis inductance (Lq) [2, 6]
-	float m_injected_l;            // Live stator inductance (Ld+Lq)/2 from initial table of vesc motor testing [2, 5]
-	float m_injected_ld_lq_diff;   // Live saliency indicator (Lq - Ld) from initial table of vesc motor testing [2, 5]
-	float m_injected_inv_ld;       // Live inverse d-axis inductance (1 / Ld) [3, 7]
-	float m_injected_inv_lq;       // Live inverse q-axis inductance (1 / Lq) [3, 7]
-	float m_injected_p_inv_ld_lq;  // Live inverse saliency difference (1/Lq - 1/Ld) [3, 7]
-	float m_injected_p_v2_v3_inv_avg_half; 	// Live HFI average of inverse d and q axis inductances: 0.5 * (1/Ld + 1/Lq)
+	float m_injected_flux;         			foc_motor_flux_linkage	// Live stator flux linkage (lambda) from initial table of vesc motor testing
+	float m_injected_ld;           			p_ld					// Live d-axis inductance (Ld)
+	float m_injected_lq;           			p_lq					// Live q-axis inductance (Lq)
+	float m_injected_l;            			foc_motor_l				// Live stator inductance (Ld+Lq)/2 from initial table of vesc motor testing
+	float m_injected_ld_lq_diff;   			foc_motor_ld_lq_diff	// Live saliency indicator (Lq - Ld) from initial table of vesc motor testing
+	float m_injected_inv_ld;       									// Live inverse d-axis inductance (1 / Ld)
+	float m_injected_inv_lq;       									// Live inverse q-axis inductance (1 / Lq)
+	float m_injected_p_inv_ld_lq;  			p_inv_ld_lq				// Live inverse saliency difference (1/Lq - 1/Ld)
+	float m_injected_p_v2_v3_inv_avg_half; 	p_v2_v3_inv_avg_half 	// Live HFI average of inverse d and q axis inductances: 0.5 * (1/Ld + 1/Lq)
 
 ### Current modes/operating plan
 1. Start mode. If the MGU is not spinning, and either a press and hold start button or possible future can bus command, will put us into start mode, where we will go to speed pid control, initially with the speed set to 200 engine rpm (must calc engine -> MGU via real belt ratio * 8 to get ERPM value for speed pid) and a testing determined open loop current. allow braking will be false, so that when the engine starts the MGU free wheels up with the engine, and expected low idle is 600 engine RPM. When the button is released, there are two choices, if erpm is above the speed set point, we know the engine is running, and will go to alternator mode. If the speed is near the set speed, we will freewheel down to a stop.

@@ -21,6 +21,7 @@
 #include "utils_math.h"
 #include "hw.h"
 #include <math.h>
+#include "wrsm_field_controller.h"
 
 // See http://cas.ensmp.fr/~praly/Telechargement/Journaux/2010-IEEE_TPEL-Lee-Hong-Nam-Ortega-Praly-Astolfi.pdf
 void foc_observer_update(float v_alpha, float v_beta, float i_alpha, float i_beta,
@@ -29,8 +30,10 @@ void foc_observer_update(float v_alpha, float v_beta, float i_alpha, float i_bet
 	mc_configuration *conf_now = motor->m_conf;
 
 	float R = conf_now->foc_motor_r;
-	float L = conf_now->foc_motor_l;
-	float lambda = conf_now->foc_motor_flux_linkage;
+	//float L = conf_now->foc_motor_l;//m_injected_l
+	float L = motor->m_injected_l;
+	//float lambda = conf_now->foc_motor_flux_linkage;
+	float lambda = motor->m_injected_flux;
 
 	// Saturation compensation
 	switch(conf_now->foc_sat_comp_mode) {
@@ -71,7 +74,7 @@ void foc_observer_update(float v_alpha, float v_beta, float i_alpha, float i_bet
 		R = motor->m_res_temp_comp;
 	}
 
-	float ld_lq_diff = conf_now->foc_motor_ld_lq_diff;
+	float ld_lq_diff = motor->m_injected_ld_lq_diff;
 	float id = motor->m_motor_state.id;
 	float iq = motor->m_motor_state.iq;
 
@@ -774,7 +777,7 @@ void foc_hfi_adjust_angle(float ang_err, motor_all_state_t *motor, float dt) {
 
 void foc_precalc_values(motor_all_state_t *motor) {
 	const mc_configuration *conf_now = motor->m_conf;
-	update_hybrid_mgu_parameters(motor);
+	wrsm_update_foc_parameters(motor);
 	//motor->p_lq = conf_now->foc_motor_l + conf_now->foc_motor_ld_lq_diff * 0.5;
 	//motor->p_ld = conf_now->foc_motor_l - conf_now->foc_motor_ld_lq_diff * 0.5;
 	//motor->p_inv_ld_lq = (1.0 / motor->p_lq - 1.0 / motor->p_ld);

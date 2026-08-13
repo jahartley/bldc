@@ -7,13 +7,10 @@
 // --- JAH: WRSM ROTOR FIELD REGULATION INTERFACE ---
 // ============================================================================
 
-/**
- * Global override flags. 
- * Your background 1 kHz supervisor thread will manipulate these to bypass 
- * the optimal loss-minimizer (e.g., during cold-start pre-excitation).
- */
-extern volatile bool field_override_active;
-extern volatile float field_override_value;
+
+#ifndef WRSM_FIELD_DISABLE
+#define WRSM_FIELD_DISABLE() palClearPad(HW_FIELD_EN_GPIO, HW_FIELD_EN_PIN)
+#endif
 
 // --- Level 1: Static Inline High-Speed parameter injection (Executed in FOC ISR) ---
 /**
@@ -86,30 +83,6 @@ void wrsm_set_field_duty(motor_all_state_t *motor, float duty);
  * @return None.
  */
 void wrsm_set_field_enable(motor_all_state_t *motor, bool enable);
-
-/**
- * @brief  Safely manages the physical decay of the rotor's inductive magnetic field.
- * @note   Called at 1 kHz inside the timer_update() thread in mcpwm_foc.c.
- *         Must be compiled as static inline to prevent function call bloat.
- * 
- * To prevent destructive high-voltage inductive flyback spikes (> 40V) from punching 
- * through the H-bridge silicon into the 12V rail, this function implements a low-side 
- * freewheeling decay sequence. When a disable request is active, it holds the gate-driver 
- * enable pin HIGH and forces 0% PWM duty cycle (turning both low-side MOSFETs ON). 
- * The physical enable pin is only pulled LOW once current safely drops below 0.30 A.
- * 
- * @param  motor: Pointer to the active motor state structure containing telemetry.
- * @return None.
- */
-static inline void wrsm_manage_field_decay(motor_all_state_t *motor) {
-    // If the system has requested a shutdown, freewheel low-sides and wait for current decay
-    if (!m_field_enable_request && palReadPad(HW_FIELD_EN_GPIO, HW_FIELD_EN_PIN)) {
-        wrsm_set_field_duty(motor, 0.0f);
-        if (motor->m_field_current < 0.30f) {
-            WRSM_FIELD_DISABLE(); 
-        }
-    }
-}
 
 // --- Level 3 Control Interface ---
 /**

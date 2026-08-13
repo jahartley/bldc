@@ -323,7 +323,7 @@
 #ifdef MCCONF_FOC_MTPA_MODE
 #undef MCCONF_FOC_MTPA_MODE
 #endif
-#define MCCONF_FOC_MTPA_MODE            1 // 1 = MTPA_MODE_IQ_TARGET
+#define MCCONF_FOC_MTPA_MODE            0 // 0 = MTPA_MODE_OFF 1 = MTPA_MODE_IQ_TARGET
 
 // Force full Speed-compensated Cross-coupling & BEMF Decoupling by default
 #ifdef MCCONF_FOC_CC_DECOUPLING

@@ -258,9 +258,14 @@ typedef struct {
 	float m_injected_p_v2_v3_inv_avg_half; 	// Live HFI average of inverse d and q axis inductances: 0.5 * (1/Ld + 1/Lq)
 
 	// --- JAH ADDED FIELD CONTROL VARIABLES
-	float m_field_current;
-	float m_field_current_target;
-	float m_field_duty;
+	float m_field_current;			// field measured current value
+	float m_field_current_target;	// field target current value
+	float m_field_duty;				// field pwm current duty tracking
+	bool m_field_enable_request;	// requested enable pin state for soft decay
+	bool m_field_enable_pin_active;	// enable pin state tracking
+	bool m_field_ESTOP_LOCKOUT; 	// Was m_field_fault_locked
+	bool m_field_override_active	// Was field_override_active
+	float m_field_override_current 	// Was field_override_value
 } motor_all_state_t;
 
 // Functions
@@ -277,6 +282,5 @@ float foc_correct_hall(float angle, float dt, motor_all_state_t *motor, int hall
 void foc_run_fw(motor_all_state_t *motor, float dt);
 void foc_hfi_adjust_angle(float ang_err, motor_all_state_t *motor, float dt);
 void foc_precalc_values(motor_all_state_t *motor);
-void update_hybrid_mgu_parameters(motor_all_state_t *motor);
 
 #endif /* FOC_MATH_H_ */

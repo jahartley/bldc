@@ -49,6 +49,7 @@
 #include <stdio.h>
 #include "virtual_motor.h"
 #include "foc_math.h"
+#include "wrsm_field_controller.h"
 
 // Private variables
 static volatile bool m_dccal_done = false;
@@ -58,11 +59,6 @@ static volatile motor_all_state_t m_motor_1;
 static volatile motor_all_state_t m_motor_2;
 #endif
 static volatile int m_isr_motor = 0;
-// JAH added Safety interlock to prevent background threads from enabling the field during a fault
-static volatile bool m_field_enable_request = false; // User's desired state
-static volatile bool m_field_fault_locked = false;
-#define WRSM_FIELD_DISABLE() palClearPad(HW_FIELD_EN_GPIO, HW_FIELD_EN_PIN)
-
 
 // Private functions
 static void control_current(motor_all_state_t *motor, float dt);
@@ -146,78 +142,6 @@ static volatile bool pid_thd_stop;
 // Static ring buffer for EXT_ADC field current sensor filtering
 static float m_if_volts_buffer[4];
 static uint8_t m_if_buffer_idx = 0;
-
-// JAH added FUNCTIONS +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-// Fast Parameter Injection Loop (Executes at 20kHz - 30kHz inside FOC Interrupt)
-void update_hybrid_mgu_parameters(motor_all_state_t *motor) {
-    int target_row = MGU_LOOKUP_SECTORS - 1; // Fallback to the 0.00A row
-	float filtered_if = motor->m_field_current;
-    // Sequential search from highest to lowest. 
-    // Breaks instantly on the first true condition, optimizing for high-load cranking/running states.
-    for (int i = 0; i < MGU_LOOKUP_SECTORS - 1; i++) {
-        if (mgu_if_table[i].lower_bound_if <= filtered_if) {
-            target_row = i;
-            break;
-        }
-    }
-
-    // Direct pointer reference to avoid repeated array lookup overhead
-    const if_lookup_row_t *row = &mgu_if_table[target_row];
-
-    // Single Delta Optimization: Calculate the delta current exactly once
-    float shared_delta = filtered_if - row->lower_bound_if;
-
-    // Zero-guard boundary: Handle minor negative ADC tracking noise safely
-    if (shared_delta < 0.0f) {
-        shared_delta = 0.0f;
-    }
-
-    // Multi-variable execution phase. 1 multiply and 1 add per line.
-    // Zero runtime division, zero nested branches. 
-    motor->m_injected_flux         = row->base_flux         + (shared_delta * row->slope_flux);
-    motor->m_injected_ld           = row->base_ld           + (shared_delta * row->slope_ld);
-    motor->m_injected_lq           = row->base_lq           + (shared_delta * row->slope_lq);
-    motor->m_injected_l            = row->base_l            + (shared_delta * row->slope_l);
-    motor->m_injected_ld_lq_diff   = row->base_ld_lq_diff   + (shared_delta * row->slope_ld_lq_diff);
-    motor->m_injected_inv_ld       = row->base_inv_ld       + (shared_delta * row->slope_inv_ld);
-    motor->m_injected_inv_lq       = row->base_inv_lq       + (shared_delta * row->slope_inv_lq);
-    motor->m_injected_p_inv_ld_lq  = motor->m_injected_inv_lq - motor->m_injected_inv_ld;
-	motor->m_injected_p_v2_v3_inv_avg_half = 0.45f * (motor->m_injected_inv_lq + motor->m_injected_inv_ld);
-}
-
-void mcpwm_foc_set_field_duty(float duty) {
-    // 1. Clamp duty cycle between 0% and 100% for physical safety
-    if (duty < 0.0f) duty = 0.0f;
-    if (duty > 1.0f) duty = 1.0f;
-
-    // 2. Map float [0.0 - 1.0] to Timer ARR ticks (200 ticks = 5kHz at 1MHz)
-    uint32_t width = (uint32_t)(duty * 200.0f);
-    
-    // 3. Update the active duty cycle in the motor telemetry struct
-    m_motor_1.m_field_duty = duty;
-#ifdef HW_HAS_DUAL_MOTORS
-    m_motor_2.m_field_duty = duty;
-#endif
-
-    // 4. Write to Channel 0 (TIM4 CH1 / PB6)
-    pwmEnableChannel(&PWMD4, 0, width);
-}
-
-void mcpwm_foc_set_field_enable(bool enable) {
-    m_field_enable_request = enable;
-    
-    if (enable) {
-        if (!m_field_fault_locked) {
-            palSetPad(HW_FIELD_EN_GPIO, HW_FIELD_EN_PIN); // Turn on immediately
-        }
-    } else {
-		// Note: If false, we do NOT clear the pin here. 
-   		// We let the 1kHz timer thread handle the soft decay.
-		mcpwm_foc_set_field_duty(0.0f);
-	}    
-}
-
-// END JAH added FUNCTIONS ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 static void update_hfi_samples(foc_hfi_samples samples, volatile motor_all_state_t *motor) {
 	utils_sys_lock_cnt();
@@ -1663,7 +1587,7 @@ int mcpwm_foc_encoder_detect(float current, bool print, float *offset, float *ra
 	float offset_old = motor->m_conf->foc_encoder_offset;
 	float inverted_old = motor->m_conf->foc_encoder_inverted;
 	float ratio_old = motor->m_conf->foc_encoder_ratio;
-	float ldiff_old = motor->m_conf->foc_motor_ld_lq_diff;
+	float ldiff_old = motor->m_injected_ld_lq_diff;
 
 	motor->m_conf->foc_encoder_offset = 0.0;
 	motor->m_conf->foc_encoder_inverted = false;
@@ -3475,7 +3399,7 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 	motor_now->m_field_current = filtered_if;
 
 	// Trigger high-speed FOC Parameter Lookup Injection
-	update_hybrid_mgu_parameters(motor_now);	
+	wrsm_update_foc_parameters(motor_now);	
 
 
 // --- JAH WRSM addition END
@@ -3609,7 +3533,8 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 			state_now->vq_int = state_now->vq;
 			if (conf_now->foc_cc_decoupling == FOC_CC_DECOUPLING_BEMF ||
 					conf_now->foc_cc_decoupling == FOC_CC_DECOUPLING_CROSS_BEMF) {
-				state_now->vq_int -= motor_now->m_pll_speed * conf_now->foc_motor_flux_linkage;
+				//state_now->vq_int -= motor_now->m_pll_speed * conf_now->foc_motor_flux_linkage;
+				state_now->vq_int -= motor_now->m_pll_speed * motor->m_injected_flux;
 			}
 		}
 		motor_now->m_was_control_duty = control_duty;
@@ -3851,10 +3776,11 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 		FOC_PROFILE_LINE_FINE();
 
 		// Apply MTPA. See: https://github.com/vedderb/bldc/pull/179
-		const float ld_lq_diff = conf_now->foc_motor_ld_lq_diff;
+		const float ld_lq_diff = motor->m_injected_ld_lq_difff;
 		if (conf_now->foc_mtpa_mode != MTPA_MODE_OFF && ld_lq_diff != 0.0 &&
 				motor_now->m_control_mode != CONTROL_MODE_OPENLOOP_PHASE) {
-			const float lambda = conf_now->foc_motor_flux_linkage;
+			//const float lambda = conf_now->foc_motor_flux_linkage;
+			const float lambda = motor->m_injected_flux;
 
 			float iq_ref = iq_set_tmp;
 			if (conf_now->foc_mtpa_mode == MTPA_MODE_IQ_MEASURED) {
@@ -4027,7 +3953,8 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 
 		if (conf_now->foc_cc_decoupling == FOC_CC_DECOUPLING_BEMF ||
 				conf_now->foc_cc_decoupling == FOC_CC_DECOUPLING_CROSS_BEMF) {
-			state_now->vq_int -= motor_now->m_pll_speed * conf_now->foc_motor_flux_linkage;
+			//state_now->vq_int -= motor_now->m_pll_speed * conf_now->foc_motor_flux_linkage;
+			state_now->vq_int -= motor_now->m_pll_speed * motor->m_injected_flux;
 		}
 
 		// Update corresponding modulation
@@ -4174,22 +4101,8 @@ static void timer_update(motor_all_state_t *motor, float dt) {
 		motor->m_current_ki_temp_comp = conf_now->foc_current_ki;
 	}
 
-	// ============================================================================
-    // --- JAH addedWRSM SOFT DECAY CONTROLLER (1kHz Context)
-    // ============================================================================
-    if (!m_field_enable_request && palReadPad(HW_FIELD_EN_GPIO, HW_FIELD_EN_PIN)) {
-        // 1. Force duty cycle/current target to 0
-        mcpwm_foc_set_field_duty(0.0f);
-        
-        // 2. Monitor field current. Once it drops below 10% (approx 0.3A), disable the bridge
-        if (motor->m_field_current < 0.30f) { [2]
-            WRSM_FIELD_DISABLE(); // Safe to go HIGH-Z now!
-        }
-    }
-    // ============================================================================
+	wrsm_update_field_control(motor, dt);
 
-	// Check if it is time to stop the modulation. Notice that modulation is kept on as long as there is
-	// field weakening current.
 	utils_sys_lock_cnt();
 	utils_step_towards((float*)&motor->m_current_off_delay, 0.0, dt);
 	if (!motor->m_phase_override && motor->m_state == MC_STATE_RUNNING &&
@@ -4368,8 +4281,10 @@ static void timer_update(motor_all_state_t *motor, float dt) {
 		// Set observer state to help it start tracking when leaving open loop.
 		float s, c;
 		utils_fast_sincos_better(motor->m_phase_now_observer_override + SIGN(motor->m_motor_state.duty_now) * M_PI / 4.0, &s, &c);
-		motor->m_observer_x1_override = c * conf_now->foc_motor_flux_linkage;
-		motor->m_observer_x2_override = s * conf_now->foc_motor_flux_linkage;
+		//motor->m_observer_x1_override = c * conf_now->foc_motor_flux_linkage;
+		//motor->m_observer_x2_override = s * conf_now->foc_motor_flux_linkage;
+		motor->m_observer_x1_override = c * motor->m_injected_flux;
+		motor->m_observer_x2_override = s * motor->m_injected_flux;
 	} else {
 		motor->m_phase_now_observer_override = motor->m_phase_now_observer;
 		motor->m_phase_observer_override = false;
@@ -4404,7 +4319,8 @@ static void timer_update(motor_all_state_t *motor, float dt) {
 	{
 		float res_est_gain = 0.00002;
 		float i_abs_sq = SQ(motor->m_motor_state.i_abs);
-		motor->m_res_est = motor->m_r_est_state - 0.5 * res_est_gain * conf_now->foc_motor_l * i_abs_sq;
+		//motor->m_res_est = motor->m_r_est_state - 0.5 * res_est_gain * conf_now->foc_motor_l * i_abs_sq;
+		motor->m_res_est = motor->m_r_est_state - 0.5 * res_est_gain * motor->m_injected_l * i_abs_sq;
 		float res_dot = -res_est_gain * (motor->m_res_est * i_abs_sq + motor->m_speed_est_fast *
 				(motor->m_motor_state.i_beta * motor->m_observer_state.x1 - motor->m_motor_state.i_alpha * motor->m_observer_state.x2) -
 				(motor->m_motor_state.i_alpha * motor->m_motor_state.v_alpha + motor->m_motor_state.i_beta * motor->m_motor_state.v_beta));
@@ -4539,8 +4455,10 @@ static void hfi_update(volatile motor_all_state_t *motor, float dt) {
 					if (motor->m_conf->foc_sensor_mode == FOC_SENSOR_MODE_HFI_START) {
 						float s, c;
 						utils_fast_sincos_better(angle_bin_2, &s, &c);
-						motor->m_observer_state.x1 = c * motor->m_conf->foc_motor_flux_linkage;
-						motor->m_observer_state.x2 = s * motor->m_conf->foc_motor_flux_linkage;
+						//motor->m_observer_state.x1 = c * motor->m_conf->foc_motor_flux_linkage;
+						//motor->m_observer_state.x2 = s * motor->m_conf->foc_motor_flux_linkage;
+						motor->m_observer_state.x1 = c * motor->m_injected_flux;
+						motor->m_observer_state.x2 = s * motor->m_injected_flux;
 					}
 				}
 
@@ -4898,18 +4816,20 @@ static void control_current(motor_all_state_t *motor, float dt) {
 	if (motor->m_control_mode < CONTROL_MODE_HANDBRAKE && conf_now->foc_cc_decoupling != FOC_CC_DECOUPLING_DISABLED) {
 		switch (conf_now->foc_cc_decoupling) {
 		case FOC_CC_DECOUPLING_CROSS:
-			dec_vd = state_m->iq * motor->m_speed_est_fast * motor->p_lq; // m_speed_est_fast is ωe in [rad/s]
-			dec_vq = state_m->id * motor->m_speed_est_fast * motor->p_ld;
+			dec_vd = state_m->iq * motor->m_speed_est_fast * motor->m_injected_lq; // m_speed_est_fast is ωe in [rad/s]
+			dec_vq = state_m->id * motor->m_speed_est_fast * motor->m_injected_ld;
 			break;
 
 		case FOC_CC_DECOUPLING_BEMF:
-			dec_bemf = motor->m_speed_est_fast * conf_now->foc_motor_flux_linkage;
+			//dec_bemf = motor->m_speed_est_fast * conf_now->foc_motor_flux_linkage;
+			dec_bemf = motor->m_speed_est_fast * motor->m_injected_flux;
 			break;
 
 		case FOC_CC_DECOUPLING_CROSS_BEMF:
-			dec_vd = state_m->iq * motor->m_speed_est_fast * motor->p_lq;
-			dec_vq = state_m->id * motor->m_speed_est_fast * motor->p_ld;
-			dec_bemf = motor->m_speed_est_fast * conf_now->foc_motor_flux_linkage;
+			dec_vd = state_m->iq * motor->m_speed_est_fast * motor->m_injected_lq;
+			dec_vq = state_m->id * motor->m_speed_est_fast * motor->m_injected_ld;
+			//dec_bemf = motor->m_speed_est_fast * conf_now->foc_motor_flux_linkage;
+			dec_bemf = motor->m_speed_est_fast * motor->m_injected_flux;
 			break;
 
 		default:
@@ -5079,7 +4999,7 @@ static void control_current(motor_all_state_t *motor, float dt) {
 					}
 #endif
 					foc_hfi_adjust_angle(
-							(di * conf_now->foc_f_zv) / (hfi_voltage * motor->p_inv_ld_lq),
+							(di * conf_now->foc_f_zv) / (hfi_voltage * motor->m_injected_p_inv_ld_lq),
 							motor, hfi_dt
 					);
 				}
@@ -5134,7 +5054,7 @@ static void control_current(motor_all_state_t *motor, float dt) {
 #endif
 					foc_hfi_adjust_angle(
 							motor->m_hfi.sign_last_sample * ((conf_now->foc_f_zv * di) /
-									hfi_voltage - motor->p_v2_v3_inv_avg_half) / motor->p_inv_ld_lq,
+									hfi_voltage - motor->m_injected_p_v2_v3_inv_avg_half) / motor->m_injected_p_inv_ld_lq,
 							motor, hfi_dt
 					);
 				}
@@ -5575,7 +5495,8 @@ static void start_pwm_hw(motor_all_state_t *motor) {
 static void full_brake_hw(motor_all_state_t *motor) {
 	// --- JAH added field emergency stop and lockout.
 	WRSM_FIELD_DISABLE();
-	m_field_fault_locked = true;
+	motor->m_field_ESTOP_LOCKOUT = true;
+	motor->m_field_enable_pin_active = false;
 
 	if (motor == &m_motor_1) {
 		TIM_SelectOCxM(TIM1, TIM_Channel_1, TIM_ForcedAction_InActive);
@@ -5637,7 +5558,7 @@ static void full_brake_hw(motor_all_state_t *motor) {
 		ENABLE_BR_2();
 #endif
 	}
-	mcpwm_foc_set_field_duty(0.0f);
+	wrsm_set_field_duty(0.0f);
 	motor->m_pwm_mode = FOC_PWM_FULL_BRAKE;
 }
 
