@@ -39,6 +39,57 @@ static struct {
 };
 
 // ============================================================================
+// --- Lookup functions
+// ============================================================================
+float wrsm_lookup_flux(float field_curr) {
+    if (field_curr <= 0.00f) return 0.00308000f; // Floor: Sub-magnet flux linkage
+    if (field_curr >= 2.92f) return 0.01320000f; // Ceiling: Claw-pole saturation limit
+
+    int target_row = MGU_LOOKUP_SECTORS - 1;
+    
+
+    for (int i = 0; i < MGU_LOOKUP_SECTORS - 1; i++) {
+        if (mgu_if_table[i].lower_bound_if <= field_curr) {
+            target_row = i;
+            break;
+        }
+    }
+
+    const if_lookup_row_t *row = &mgu_if_table[target_row];
+    float shared_delta = field_curr - row->lower_bound_if;
+    if (shared_delta < 0.0f) {
+        shared_delta = 0.0f;
+    }
+
+    return row->base_flux + (shared_delta * row->slope_flux);
+}
+
+float wrsm_lookup_if_from_flux(float target_flux) {
+    if (target_flux <= 0.00308000f) return 0.00f;
+    if (target_flux >= 0.01320000f) return 2.92f;
+
+        int target_row = MGU_LOOKUP_SECTORS - 1;
+
+    // Scan table from highest flux sector to lowest
+    for (int i = 0; i < MGU_LOOKUP_SECTORS - 1; i++) {
+        if (mgu_if_table[i].base_flux <= target_flux) {
+            target_row = i;
+            break;
+        }
+    }
+
+    const if_lookup_row_t *row = &mgu_if_table[target_row];
+    float shared_delta = target_flux - row->base_flux;
+    if (shared_delta < 0.0f) {
+        shared_delta = 0.0f;
+    }
+
+    // Since delta_flux = delta_if * slope_flux, then:
+    // delta_if = delta_flux / slope_flux
+    return row->lower_bound_if + (shared_delta / row->slope_flux);
+}
+
+// ============================================================================
 // --- LEVEL 2 PHYSICAL DRIVER FUNCTIONS ---
 // ============================================================================
 
@@ -81,7 +132,7 @@ void wrsm_update_field_control(motor_all_state_t *motor, float dt) {
         motor->m_conf->foc_observer_gain = 1000.0f / (live_flux * live_flux);
     }
 
-    // STATE 1: HARD ESTOP LOCKOUT (Permanent until power-cycle reboot)
+    // CHECK 1: HARD ESTOP LOCKOUT (Permanent until power-cycle reboot)
     if (motor->m_field_ESTOP_LOCKOUT) {
         // We do no decay checks or pin toggles. ESTOP has already forced a shutdown.
         field_pid.integrator = 0.0f;
@@ -90,7 +141,7 @@ void wrsm_update_field_control(motor_all_state_t *motor, float dt) {
         return; // Exit immediately
     }
 
-    // STATE 2: SOFT DISABLE / NON-ESTOP FAULT DECAY (Intent is OFF)
+    // CHECK 2: SOFT DISABLE / NON-ESTOP FAULT DECAY (Intent is OFF)
     if (!motor->m_field_enable_request) {
         // Zero the control target and integrator immediately
         field_pid.integrator = 0.0f;
@@ -111,7 +162,7 @@ void wrsm_update_field_control(motor_all_state_t *motor, float dt) {
         return; // Exit immediately
     }
 
-    // STATE 3: ENABLE REQUESTED (Intent is ON)
+    // CHECK 3: ENABLE REQUESTED (Intent is ON)
     // If the driver isn't physically turned on yet, we do no math at all.
     // The pin must be asserted by wrsm_set_field_enable(true) elsewhere.
     if (!motor->m_field_enable_pin_active) {
@@ -121,9 +172,8 @@ void wrsm_update_field_control(motor_all_state_t *motor, float dt) {
         return; // Exit immediately
     }
 
-    // ============================================================================
-    // STATE 4: STANDBY / IDLE (MC_STATE_OFF but Intent is ON & Hardware is ON)
-    // ============================================================================
+    
+    // CHECK 4: STANDBY / IDLE (MC_STATE_OFF but Intent is ON & Hardware is ON)
     if (motor->m_state == MC_STATE_OFF) {
         wrsm_set_field_duty(motor, 0.0f); // Force 0% duty (active low-side freewheeling ready)
         field_pid.integrator = 0.0f;
@@ -132,48 +182,60 @@ void wrsm_update_field_control(motor_all_state_t *motor, float dt) {
         return; // Exit immediately
     }
 
-    // ============================================================================
-    // STATE 5: ACTIVE CLOSED-LOOP REGULATION (FOC Running, Intent is ON, HW is ON)
-    // ============================================================================
-    float target_if = 0.0f;
-
-    // --- STEP A: RESOLVE OVERRIDE VS. LOSS-MINIMIZATION SOLVER ---
+    // ACTIVE CLOSED-LOOP REGULATION (FOC Running, Intent is ON, HW is ON)
+    // --- STEP A: CALCULATE THE UNWEAKENED COPPER LOSS TARGET ---
+    float optimal_if = 0.0f;
     if (motor->m_field_override_active) {
-        target_if = motor->m_field_override_current;
+        optimal_if = motor->m_field_override_value;
     } else {
         float iq_target_abs = fabsf(motor->m_motor_state.iq_target);
         if (iq_target_abs > 0.1f) {
-            // Optimal stator-rotor copper loss balancing
-            target_if = 0.191f * sqrtf(iq_target_abs) - 0.087f;
+            optimal_if = 0.191f * sqrtf(iq_target_abs) - 0.087f;
         }
     }
-
-    // --- STEP B: DYNAMIC VEHICLE ELECTRICAL LIMITS & SAFETY CLAMPS ---
-    float erpm_abs = fabsf(mcpwm_foc_get_rpm());
     float v_batt = motor->m_motor_state.v_bus;
+    float estimateMaxCurrent = v_batt / MGU_FIELD_R;
+    // Truncate optimal to available bounds [0A to current voltage limit]
+    utils_truncate_number(&optimal_if, 0.0f, estimateMaxCurrent);
 
-    // Limit A: Physical current ceiling based on battery voltage (prevents PI windup)
-    float max_possible_if = (v_batt - 0.5f) / 5.60f;
-    if (max_possible_if < 0.0f) max_possible_if = 0.0f;
+    // --- STEP B: RUN SATURATION-AWARE FLUX-WEAKENING ENVELOPE ALLOCATOR ---
 
-    // Limit B: Back-EMF safety clamp (prevents passive diode conduction)
-    float max_safe_if = (741.02f * (v_batt - 1.0f)) / fmaxf(erpm_abs, 100.0f) - 0.414f;
-    if (max_safe_if < 0.0f) max_safe_if = 0.0f;
+    // B1. Convert unweakened optimal current to Webers of magnetic flux linkage
+    float optimal_flux = wrsm_lookup_flux(optimal_if);
 
-    // Apply the most restrictive limit (clamped at physical ceiling of 2.92A)
-    float upper_limit = (max_possible_if < max_safe_if) ? max_possible_if : max_safe_if;
-    float safe_ceiling = (upper_limit < 2.92f) ? upper_limit : 2.92f;
-    utils_truncate_number(&target_if, 0.0f, safe_ceiling);
+    // B2. Convert high-speed stator-equivalent demand into Webers of flux reduction
+    // (Demanded flux = Stator FW Amps * Live D-Axis inductance)
+    float delta_flux_demanded = motor->m_i_fw_set * motor->m_injected_ld;
+
+    // B3. Subtract to find net target flux required inside the air gap
+    float target_flux = optimal_flux - delta_flux_demanded;
+
+    float target_if = 0.0f;
+    float unmet_stator_fw_id = 0.0f;
+
+    if (target_flux >= 0.00308000f) {
+        // STAGE 1: Rotor winding has enough magnetic headroom to weakening on its own
+        target_if = wrsm_lookup_if_from_flux(target_flux);
+        unmet_stator_fw_id = 0.0f; // Stator i_d remains at 0.0A!
+    } else {
+        // STAGE 2: Rotor field has collapsed to 0A; stator must handle the remaining permanent magnets
+        target_if = 0.0f;
+        float unmet_flux = 0.00308000f - target_flux;
+
+        // Convert remaining unmet flux back to stator d-axis current using L_d(0) = 30.13 uH (0.00003013 H)
+        unmet_stator_fw_id = unmet_flux / 0.00003013f;
+    }
 
     motor->m_field_current_target = target_if;
+    motor->m_stator_fw_id = unmet_stator_fw_id; // Feed to high-frequency FOC current controller
 
-    // --- STEP C: CLOSED-LOOP PI REGULATION ---
+    // --- STEP C: PI CLOSED-LOOP CURRENT CONTROLLER ---
     float error = target_if - measured_if;
     float p_term = error * field_pid.kp;
 
-    // Anti-Windup: Freeze integration if duty is saturated and error is positive
+    // Integrator freeze Anti-Windup Guard
     if (motor->m_field_duty >= 1.0f && error > 0.0f) {
-        // Freeze integration
+        // Saturated, freeze integration
     } else {
         field_pid.integrator += error * field_pid.ki * dt;
     }
@@ -182,7 +244,7 @@ void wrsm_update_field_control(motor_all_state_t *motor, float dt) {
     float duty_out = p_term + field_pid.integrator;
     utils_truncate_number(&duty_out, 0.0f, 1.0f);
 
-    // --- STEP D: PHYSICAL PWM HARDWARE UPDATE ---
+    // --- STEP D: UPDATE PHYSICAL PWM TIMER REGISTER ---
     wrsm_set_field_duty(motor, duty_out);
     field_pid.prev_error = error;
 }

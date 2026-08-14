@@ -54,6 +54,40 @@ static inline void wrsm_update_foc_parameters(motor_all_state_t *motor) {
     motor->m_injected_p_v2_v3_inv_avg_half = 0.45f * (motor->m_injected_inv_lq + motor->m_injected_inv_ld);
 }
 
+// --- Additional Lookup functions
+/**
+ * @brief Performs forward piecewise linear interpolation to determine air gap flux linkage.
+ * 
+ * This function maps the physical rotor field current (I_f) to the corresponding 
+ * stator flux linkage (lambda) using the MGU's calibrated saturation profile, the same 
+ * as wrsm_update_foc_parameters() except directly returning the flux linkage value.
+ *
+ * @param[in] field_curr The actual or target rotor field current in amps.
+ * 
+ * @return The corresponding stator-equivalent magnetic flux linkage in Webers [Wb].
+ * 
+ * @note This is a fast, division-free lookup designed to run within the 1 kHz 
+ *       regulator context to support flux-based field-weakening allocation.
+ */
+float wrsm_lookup_flux(float field_curr);
+
+/**
+ * @brief Performs reverse piecewise linear interpolation to determine required rotor current.
+ * 
+ * This function translates a target air gap flux linkage back into the physical 
+ * rotor field current target (I_f*) required to generate that flux. It acts as the 
+ * inverse of wrsm_lookup_flux.
+ *
+ * @param[in] target_flux The target air gap magnetic flux linkage in Webers [Wb].
+ * 
+ * @return The required rotor excitation current in amps.
+ * 
+ * @note If the target flux falls below the physical claw-pole residual floor of 
+ *       3.08 mWb, this function returns 0.00A, signaling that the rotor is fully 
+ *       demagnetized.
+ */
+float wrsm_lookup_if_from_flux(float target_flux);
+
 // --- Level 2 Control Interface ---
 
 /**

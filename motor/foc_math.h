@@ -264,8 +264,9 @@ typedef struct {
 	bool m_field_enable_request;	// requested enable pin state for soft decay
 	bool m_field_enable_pin_active;	// enable pin state tracking
 	bool m_field_ESTOP_LOCKOUT; 	// Was m_field_fault_locked
-	bool m_field_override_active	// Was field_override_active
-	float m_field_override_current 	// Was field_override_value
+	bool m_field_override_active;	// Was field_override_active
+	float m_field_override_current;	// Was field_override_value
+	float m_stator_fw_id;           // Pre-calculated unmet stator field-weakening id current
 } motor_all_state_t;
 
 // Functions

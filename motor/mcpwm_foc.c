@@ -3776,7 +3776,7 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 		FOC_PROFILE_LINE_FINE();
 
 		// Apply MTPA. See: https://github.com/vedderb/bldc/pull/179
-		const float ld_lq_diff = motor->m_injected_ld_lq_difff;
+		const float ld_lq_diff = motor->m_injected_ld_lq_diff;
 		if (conf_now->foc_mtpa_mode != MTPA_MODE_OFF && ld_lq_diff != 0.0 &&
 				motor_now->m_control_mode != CONTROL_MODE_OPENLOOP_PHASE) {
 			//const float lambda = conf_now->foc_motor_flux_linkage;
@@ -3802,6 +3802,7 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 			foc_run_fw(motor_now, dt);
 		}
 
+		// JAHTODO use newly calculated i_f i_d combo to set these values!
 		// id_set_tmp -= motor_now->m_i_fw_set;
 		id_set_tmp = utils_max_abs(id_set_tmp, -motor_now->m_i_fw_set);
 		iq_set_tmp -= SIGN(mod_q) * motor_now->m_i_fw_set * conf_now->foc_fw_q_current_factor;
@@ -5558,7 +5559,7 @@ static void full_brake_hw(motor_all_state_t *motor) {
 		ENABLE_BR_2();
 #endif
 	}
-	wrsm_set_field_duty(0.0f);
+	wrsm_set_field_duty(motor, 0.0f);
 	motor->m_pwm_mode = FOC_PWM_FULL_BRAKE;
 }
 
