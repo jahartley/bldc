@@ -1482,13 +1482,13 @@ typedef struct __attribute__((packed)) {
 
 // --- 1. Old Static Configuration Parameters (mc_configuration) ---
 // Replaced by: motor->m_injected_flux
-#define foc_motor_flux_linkage          STALE_CFG_FOC_MOTOR_FLUX_LINKAGE_ERROR
+//#define foc_motor_flux_linkage          STALE_CFG_FOC_MOTOR_FLUX_LINKAGE_ERROR
 
 // Replaced by: motor->m_injected_l_avg
-#define foc_motor_l                     STALE_CFG_FOC_MOTOR_L_ERROR
+//#define foc_motor_l                     STALE_CFG_FOC_MOTOR_L_ERROR
 
 // Replaced by: motor->m_injected_ld_lq_diff
-#define foc_motor_ld_lq_diff            STALE_CFG_FOC_MOTOR_LD_LQ_DIFF_ERROR
+//#define foc_motor_ld_lq_diff            STALE_CFG_FOC_MOTOR_LD_LQ_DIFF_ERROR
 
 
 // --- 2. Old Startup Precalculated Parameters (motor_all_state_t) ---

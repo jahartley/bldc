@@ -21,6 +21,25 @@
 #include "utils_math.h"
 #include <stdbool.h>
 
+#ifdef HW_SPI_DEV_BLOCKED
+#undef NRF_PORT_CSN
+#define NRF_PORT_CSN NULL
+#undef NRF_PIN_CSN
+#define NRF_PIN_CSN 0
+#undef NRF_PORT_SCK
+#define NRF_PORT_SCK NULL
+#undef NRF_PIN_SCK
+#define NRF_PIN_SCK 0
+#undef NRF_PORT_MOSI
+#define NRF_PORT_MOSI NULL
+#undef NRF_PIN_MOSI
+#define NRF_PIN_MOSI 0
+#undef NRF_PORT_MISO
+#define NRF_PORT_MISO NULL
+#undef NRF_PIN_MISO
+#define NRF_PIN_MISO 0
+#endif
+
 // Private variables
 static bool m_init_done = false;
 static stm32_gpio_t *m_port_csn = NRF_PORT_CSN;

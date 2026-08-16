@@ -50,6 +50,7 @@
 #include "virtual_motor.h"
 #include "foc_math.h"
 #include "wrsm_field_controller.h"
+#include "wrsm_supervisor.h"
 
 // Private variables
 static volatile bool m_dccal_done = false;
@@ -515,24 +516,20 @@ void mcpwm_foc_init(mc_configuration *conf_m1, mc_configuration *conf_m2) {
 	// Initialize PB6 (PPM Pin) as Alternate Function TIM4_CH1 for PWM
 	palSetPadMode(HW_FIELD_PWM_GPIO, HW_FIELD_PWM_PIN, PAL_MODE_ALTERNATE(HW_FIELD_PWM_AF) | PAL_STM32_OSPEED_HIGHEST);
 
-	// Setup TIM4 to generate 5kHz PWM (using standard ChibiOS PWM Driver 4)
-	static PWMConfig field_pwm_cfg = {
-		1000000,                    // 1 MHz PWM clock frequency
-		200,                        // Period = 200 ticks (1,000,000 / 200 = 5,000 Hz / 5kHz)
-		NULL,                       // No periodic callback
-		{
-			{PWM_OUTPUT_ACTIVE_HIGH, NULL}, // Channel 1 (GPIOB_6)
-			{PWM_OUTPUT_DISABLED, NULL},
-			{PWM_OUTPUT_DISABLED, NULL},
-			{PWM_OUTPUT_DISABLED, NULL}
-		},
-		0,
-		0
-	};
-	pwmStart(&PWMD4, &field_pwm_cfg);
-	pwmEnableChannel(&PWMD4, 0, 0); // Start with 0.0% duty cycle (unexcited rotor)
+	// Setup TIM4 to generate 5kHz PWM via direct STM32 registers
+	rccEnableTIM4(FALSE);
+	TIM4->PSC = 83;             // 1 MHz timer tick (84MHz APB1 clock / 84)
+	TIM4->ARR = 199;            // 200 ticks = 5 kHz PWM period (0-100% duty = 0-199 ticks)
+	TIM4->CCR1 = 0;             // Start with 0.0% duty cycle (unexcited rotor)
+	TIM4->CCMR1 = (TIM_CCMR1_OC1M_1 | TIM_CCMR1_OC1M_2 | TIM_CCMR1_OC1PE); // PWM Mode 1 with preload
+	TIM4->CCER = TIM_CCER_CC1E; // Enable Channel 1 output on PB6
+	TIM4->CR1 = TIM_CR1_CEN | TIM_CR1_ARPE; // Start TIM4
+
+	// Initialize WRSM Supervisor State Machine
+	wrsm_supervisor_init((motor_all_state_t*)&m_motor_1);
 	// ============================================================================
 
+	// DC CAL INIT PROCESS, MODIFY TO SUPPORT FAST HOT STARTS JAH
 #ifdef HW_USE_ALTERNATIVE_DC_CAL
 	m_dccal_done = true;
 #else
@@ -542,6 +539,11 @@ void mcpwm_foc_init(mc_configuration *conf_m1, mc_configuration *conf_m2) {
 
 		// Wait for input voltage to rise above minimum voltage
 		while (mc_interface_get_input_voltage_filtered() < m_motor_1.m_conf->l_min_vin) {
+			// JAH added check for hot restart/already spinning, if so, skip all dc cal.
+			if (fabsf(mcpwm_foc_get_rpm()) > 100.0f) {
+				m_dccal_done = true; // Motor is spinning! Skip DC cal.
+				break;
+			}
 			chThdSleepMilliseconds(1);
 			if (UTILS_AGE_S(cal_start_time) >= cal_start_timeout) {
 				m_dccal_done = true;
@@ -1207,6 +1209,10 @@ mc_state mcpwm_foc_get_state_motor(bool is_second_motor) {
 float mcpwm_foc_get_rpm(void) {
 	return RADPS2RPM_f(get_motor_now()->m_pll_speed);
 	//	return get_motor_now()->m_speed_est_fast * RADPS2RPM_f;
+}
+
+motor_all_state_t* mcpwm_foc_get_motor_now(void) {
+	return (motor_all_state_t*)get_motor_now();
 }
 
 /**
@@ -2745,11 +2751,8 @@ int mcpwm_foc_dc_cal(bool cal_undriven) {
 	// ============================================================================
 	float field_sum = 0.0f;
 	const int field_samples = 1000;
-	bool field_was_enabled = false;
-
-	// TODO - SET FIELD H BRIDGE ENABLE LOW!!! DELAY!!! THEN SAMPLE.
-	// get field_enabled control state, save in field_was_enabled.
-	// disable field here...
+	bool field_was_enabled = m_motor_1.m_field_enable_request;
+	wrsm_set_field_enable((motor_all_state_t*)&m_motor_1, false);
 	chThdSleepMicroseconds(200);
 
 	for (int cal_idx = 0; cal_idx < field_samples; cal_idx++) {
@@ -2757,8 +2760,7 @@ int mcpwm_foc_dc_cal(bool cal_undriven) {
 		chThdSleepMicroseconds(100); // 100µs delay to let ADC registers refresh
 	}
 
-	// TODD - RESTORE FIELD ENABLE TO PRIOR VALUE
-	// if (field_was_enabled) // CALL FIELD ENABLE...
+	wrsm_set_field_enable((motor_all_state_t*)&m_motor_1, field_was_enabled);
 
 	float calibrated_field_offset = field_sum / (float)field_samples;
 
@@ -2895,11 +2897,8 @@ int mcpwm_foc_dc_cal(bool cal_undriven) {
 	// ============================================================================
 	float field_sum = 0.0f;
 	const int field_samples = 1000;
-	bool field_was_enabled = false;
-
-	// TODO - SET FIELD H BRIDGE ENABLE LOW!!! DELAY!!! THEN SAMPLE.
-	// get field_enabled control state, save in field_was_enabled.
-	// disable field here...
+	bool field_was_enabled = m_motor_1.m_field_enable_request;
+	wrsm_set_field_enable((motor_all_state_t*)&m_motor_1, false);
 	chThdSleepMicroseconds(200);
 
 	for (int cal_idx = 0; cal_idx < field_samples; cal_idx++) {
@@ -2907,8 +2906,7 @@ int mcpwm_foc_dc_cal(bool cal_undriven) {
 		chThdSleepMicroseconds(100); // 100µs delay to let ADC registers refresh
 	}
 
-	// TODD - RESTORE FIELD ENABLE TO PRIOR VALUE
-	// if (field_was_enabled) // CALL FIELD ENABLE...
+	wrsm_set_field_enable((motor_all_state_t*)&m_motor_1, field_was_enabled);
 
 	float calibrated_field_offset = field_sum / (float)field_samples;
 
@@ -2928,7 +2926,7 @@ int mcpwm_foc_dc_cal(bool cal_undriven) {
 	m_if_buffer_idx = 0;
 	// --- END JAH addition =============================================================
 
-	// TODO: Make sure that offsets are no more than e.g. 5%, as larger values indicate hardware problems.
+	// JAHTODO Make sure that offsets are no more than e.g. 5%, as larger values indicate hardware problems.
 
 	// Enable timeout
 	timeout_configure(tout, tout_c, tout_ksw);
@@ -3379,14 +3377,16 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 		field_fault_counter++;
 		if (field_fault_counter >= FIELD_CURRENT_FAULT_DEBOUNCE_CYCLES) {
 			// SOME SORT OF FIELD CURRENT FAULT NEEDS TO BE SET HERE, PROBABLY DO SOFT FIELD STOP, set fault, lock out.
-			// JAHTODOFIXME
+			// JAHTODO FIXME
 		}
 	} else {
 		field_fault_counter = 0;
 	}
 
-	// JAHTODOFIXME Can we change the FIELD_CURRENT_SENSOR_VOLTS_PER_AMP so we can multiply here vs divide?
-	float filtered_if = (if_volts_filtered - motor_now->m_conf->m_field_current_offset_v) / FIELD_CURRENT_SENSOR_VOLTS_PER_AMP;
+	#ifndef FIELD_CURRENT_SENSOR_AMPS_PER_VOLT
+	#define FIELD_CURRENT_SENSOR_AMPS_PER_VOLT (1.0f / FIELD_CURRENT_SENSOR_VOLTS_PER_AMP)
+	#endif
+	float filtered_if = (if_volts_filtered - motor_now->m_conf->m_field_current_offset_v) * FIELD_CURRENT_SENSOR_AMPS_PER_VOLT;
 
 
 	#if FIELD_CURRENT_SENSOR_UNI_DIRECTIONAL
@@ -3534,7 +3534,7 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 			if (conf_now->foc_cc_decoupling == FOC_CC_DECOUPLING_BEMF ||
 					conf_now->foc_cc_decoupling == FOC_CC_DECOUPLING_CROSS_BEMF) {
 				//state_now->vq_int -= motor_now->m_pll_speed * conf_now->foc_motor_flux_linkage;
-				state_now->vq_int -= motor_now->m_pll_speed * motor->m_injected_flux;
+				state_now->vq_int -= motor_now->m_pll_speed * motor_now->m_injected_flux;
 			}
 		}
 		motor_now->m_was_control_duty = control_duty;
@@ -3788,11 +3788,11 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 		FOC_PROFILE_LINE_FINE();
 
 		// Apply MTPA. See: https://github.com/vedderb/bldc/pull/179
-		const float ld_lq_diff = motor->m_injected_ld_lq_diff;
+		const float ld_lq_diff = motor_now->m_injected_ld_lq_diff;
 		if (conf_now->foc_mtpa_mode != MTPA_MODE_OFF && ld_lq_diff != 0.0 &&
 				motor_now->m_control_mode != CONTROL_MODE_OPENLOOP_PHASE) {
 			//const float lambda = conf_now->foc_motor_flux_linkage;
-			const float lambda = motor->m_injected_flux;
+			const float lambda = motor_now->m_injected_flux;
 
 			float iq_ref = iq_set_tmp;
 			if (conf_now->foc_mtpa_mode == MTPA_MODE_IQ_MEASURED) {
@@ -3814,10 +3814,9 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 			foc_run_fw(motor_now, dt);
 		}
 
-		// JAHTODO use newly calculated i_f i_d combo to set these values!
-		// id_set_tmp -= motor_now->m_i_fw_set;
-		id_set_tmp = utils_max_abs(id_set_tmp, -motor_now->m_i_fw_set);
-		iq_set_tmp -= SIGN(mod_q) * motor_now->m_i_fw_set * conf_now->foc_fw_q_current_factor;
+		// WRSM Dual-Stage Flux Weakening Handoff: use stator remainder m_stator_fw_id
+		id_set_tmp = utils_max_abs(id_set_tmp, -motor_now->m_stator_fw_id);
+		iq_set_tmp -= SIGN(mod_q) * motor_now->m_stator_fw_id * conf_now->foc_fw_q_current_factor;
 
 		// Apply current limits
 		// TODO: Consider D axis current for the input current as well. Currently this is done using
@@ -3967,7 +3966,7 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 		if (conf_now->foc_cc_decoupling == FOC_CC_DECOUPLING_BEMF ||
 				conf_now->foc_cc_decoupling == FOC_CC_DECOUPLING_CROSS_BEMF) {
 			//state_now->vq_int -= motor_now->m_pll_speed * conf_now->foc_motor_flux_linkage;
-			state_now->vq_int -= motor_now->m_pll_speed * motor->m_injected_flux;
+			state_now->vq_int -= motor_now->m_pll_speed * motor_now->m_injected_flux;
 		}
 
 		// Update corresponding modulation
@@ -4104,17 +4103,6 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 static void timer_update(motor_all_state_t *motor, float dt) {
 	const mc_configuration *conf_now = motor->m_conf;
 
-	// --- JAH: Manage Openloop Permission Flag ---
-    if (motor->m_state == MC_STATE_OFF) {
-        // When stopped or disabled, we reset the flag so the next start is allowed to use open-loop
-        motor->m_openloop_allowed = true;
-    } else if (!motor->m_phase_observer_override) {
-        // If the motor is running and we are NOT overriding the observer,
-        // our FOC sensorless observer has successfully converged and is tracking!
-        // Lock out any subsequent drop-downs into open loop.
-        motor->m_openloop_allowed = false;
-    }
-
 	// Calculate temperature-compensated parameters here
 	if (mc_interface_temp_motor_filtered() > -30.0) {
 		float comp_fact = 1.0 + 0.00386 * (mc_interface_temp_motor_filtered() - conf_now->foc_temp_comp_base_temp);
@@ -4125,6 +4113,8 @@ static void timer_update(motor_all_state_t *motor, float dt) {
 		motor->m_current_ki_temp_comp = conf_now->foc_current_ki;
 	}
 
+	// --- WRSM SUPERVISOR & FIELD REGULATION (1 kHz) ---
+	wrsm_supervisor_update(motor, dt);
 	wrsm_update_field_control(motor, dt);
 
 	utils_sys_lock_cnt();

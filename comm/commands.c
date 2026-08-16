@@ -477,6 +477,18 @@ void commands_process_packet(unsigned char *data, unsigned int len,
 			status |= timeout_kill_sw_active() << 1;
 			send_buffer[ind++] = status;
 		}
+		if (mask & ((uint32_t)1 << 22)) {
+			motor_all_state_t *motor = mcpwm_foc_get_motor_now();
+			buffer_append_float32(send_buffer, motor->m_field_current, 1e2, &ind);
+		}
+		if (mask & ((uint32_t)1 << 23)) {
+			motor_all_state_t *motor = mcpwm_foc_get_motor_now();
+			buffer_append_float32(send_buffer, motor->m_field_current_target, 1e2, &ind);
+		}
+		if (mask & ((uint32_t)1 << 24)) {
+			motor_all_state_t *motor = mcpwm_foc_get_motor_now();
+			buffer_append_float16(send_buffer, motor->m_field_duty, 1e3, &ind);
+		}
 
 		reply_func(send_buffer, ind);
 		mempools_free_packet_buffer(send_buffer);

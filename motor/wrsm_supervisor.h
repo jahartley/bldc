@@ -56,7 +56,7 @@ void wrsm_supervisor_update(motor_all_state_t *motor, float dt);
  * @param[in,out] motor Pointer to the core motor state structure.
  * @param[in] requested_state The target state to transition into.
  */
-void wrsm_supervisor_request_state(motor_all_state_t *motor, wrsm_super_state_t requested_state);
+void wrsm_supervisor_request_state(wrsm_super_state_t requested_state);
 
 /**
  * @brief Retrieves the active supervisor state.

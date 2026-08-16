@@ -478,6 +478,9 @@
 #ifndef MCCONF_FOC_PHASE_FILTER_ENABLE
 #define MCCONF_FOC_PHASE_FILTER_ENABLE	true // Use phase voltage filters when available
 #endif
+#ifndef FIELD_CURRENT_VOLTAGE_OFFSET_V
+#define FIELD_CURRENT_VOLTAGE_OFFSET_V 1.234f
+#endif
 #ifndef MCCONF_FOC_PHASE_FILTER_DISABLE_FAULT
 #define MCCONF_FOC_PHASE_FILTER_DISABLE_FAULT	true // Disable phase filter fault code
 #endif

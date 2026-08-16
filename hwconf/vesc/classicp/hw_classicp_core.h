@@ -351,6 +351,7 @@
 
 // Attenuated scale: +185mV/A standard sensitivity * 0.4936 actual divider factor = +91.316 mV/A
 #define FIELD_CURRENT_SENSOR_VOLTS_PER_AMP    0.091316f  
+#define FIELD_CURRENT_SENSOR_AMPS_PER_VOLT    (1.0f / FIELD_CURRENT_SENSOR_VOLTS_PER_AMP)
 
 // --- DYNAMIC PARAMETRIC FAULT MONITORING BOUNDARIES ---
 // Normal operational envelope tracks from 1.234V (0A) up to 1.501V (2.92A)
@@ -406,7 +407,7 @@ static const if_lookup_row_t mgu_if_table[MGU_LOOKUP_SECTORS] = {
         .lower_bound_if = 2.92f,
         .base_flux = 0.01320000f, .base_ld = 0.0000140900f, .base_lq = 0.0000243500f, .base_l = 0.0000192200f, .base_ld_lq_diff = 0.0000102600f,
         .base_inv_ld = 70972.3203125f, .base_inv_lq = 41067.7617188f, 
-        .slope_flux = 0.00000000f, .slope_ld = 0.00000000f, .slope_lq = 0.00000000f, .slope_l = 0.00000000f, .slope_ld_lq_diff = 0.00000000f,
+        .slope_flux = 0.00000001f, .slope_ld = 0.00000000f, .slope_lq = 0.00000000f, .slope_l = 0.00000000f, .slope_ld_lq_diff = 0.00000000f,
         .slope_inv_ld = 0.00000000f, .slope_inv_lq = 0.00000000f
     },
     // --- ROW 1: INTERVAL SECTOR 2.00A TO 2.92A ---
@@ -485,6 +486,7 @@ float hw_classicp_get_temp(void);
 #undef HW_UART_RX_PIN
 #endif
 #define HW_UART_RX_PIN         BLOCKED_GPIOB11_RX_PIN_ERROR
+#define HW_UART_DEV_BLOCKED
 
 // ============================================================================
 // --- JAH added WRSM FORK POISONING SENTINELS FOR PPM / SERVO TIM4 RECLAIM
@@ -529,6 +531,7 @@ float hw_classicp_get_temp(void);
 #undef HW_ICU_PIN
 #endif
 #define HW_ICU_PIN                    BLOCKED_PIN_6_REPURPOSED_FOR_WRSM_FIELD_PWM
+#define HW_ICU_GPIO_BLOCKED
 
 // ============================================================================
 // --- JAH added WRSM FORK POISONING SENTINELS FOR I2C2 PORT RECLAIM
@@ -563,6 +566,7 @@ float hw_classicp_get_temp(void);
 #undef HW_I2C_SDA_PIN
 #endif
 #define HW_I2C_SDA_PIN          BLOCKED_PIN_11_REPURPOSED_FOR_WRSM_RX_GPIO
+#define HW_I2C_DEV_BLOCKED
 
 // ============================================================================
 // --- JAH added WRSM FORK POISONING SENTINELS FOR SPI1 PORT RECLAIM
@@ -597,6 +601,7 @@ float hw_classicp_get_temp(void);
 #undef HW_SPI_PIN_MOSI
 #endif
 #define HW_SPI_PIN_MOSI         BLOCKED_PIN_10_REPURPOSED_FOR_WRSM_FIELD_EN
+#define HW_SPI_DEV_BLOCKED
 // ============================================================================
 
 #endif /* HW_CLASSICP_CORE_H_ */

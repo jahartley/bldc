@@ -180,8 +180,12 @@ void imu_init(imu_config *set) {
 		dev = imu_dev_for_external(set->type);
 		if (dev != IMU_DEV_NONE) {
 			com = IMU_COM_I2C_BB;
+#ifndef HW_I2C_DEV_BLOCKED
 			transport_i2c_bb_init(&m_transport, HW_I2C_SDA_PORT, HW_I2C_SDA_PIN,
 					HW_I2C_SCL_PORT, HW_I2C_SCL_PIN, 0);
+#else
+			dev = IMU_DEV_NONE;
+#endif
 		}
 	}
 

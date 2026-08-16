@@ -24,6 +24,7 @@
 #include "terminal.h"
 #include "mcpwm.h"
 #include "mcpwm_foc.h"
+#include "wrsm_supervisor.h"
 #include "mc_interface.h"
 #include "commands.h"
 #include "hw.h"
@@ -848,13 +849,19 @@ __attribute__((section(".text2"))) void terminal_process_string(char *str) {
 				if (res >= 0) {
 					commands_printf("Detection finished and applied. Results:");
 					const volatile mc_configuration *mcconf = mc_interface_get_configuration();
+					const volatile motor_all_state_t *motor = mcpwm_foc_get_motor_now();
 #ifdef HW_HAS_DUAL_MOTORS
 					commands_printf("\nMOTOR 1\n");
 #endif
 					commands_printf("Motor Current       : %.1f A", (double)(mcconf->l_current_max));
-					commands_printf("Motor R             : %.2f mOhm", (double)(mcconf->foc_motor_r * 1e3));
-					commands_printf("Motor L             : %.2f uH", (double)(mcconf->foc_motor_l * 1e6));
-					commands_printf("Motor Flux Linkage  : %.3f mWb", (double)(mcconf->foc_motor_flux_linkage * 1e3));
+					commands_printf("Motor R             : %.2f mOhm", (double)(motor->m_res_est * 1e3));
+					commands_printf("Motor L             : %.2f uH", (double)(motor->m_injected_l * 1e6));
+					commands_printf("Motor Flux Linkage  : %.3f mWb", (double)(motor->m_injected_flux * 1e3));
+					commands_printf("WRSM Super State    : %d", (int)wrsm_supervisor_get_state());
+					commands_printf("Rotor Field Current : %.2f A (Target: %.2f A)", (double)motor->m_field_current, (double)motor->m_field_current_target);
+					commands_printf("Rotor Field Duty    : %.1f %%", (double)(motor->m_field_duty * 100.0));
+					commands_printf("Rotor Field Offset  : %.3f V", (double)mcconf->m_field_current_offset_v);
+					commands_printf("Rotor Field Enable  : %s", motor->m_field_enable_request ? "ENABLED" : "DISABLED");
 					commands_printf("Temp Comp           : %s", mcconf->foc_temp_comp ? "true" : "false");
 					if (mcconf->foc_temp_comp) {
 						commands_printf("Temp Comp Base Temp : %.1f degC", (double)mcconf->foc_temp_comp_base_temp);
@@ -872,11 +879,17 @@ __attribute__((section(".text2"))) void terminal_process_string(char *str) {
 #ifdef HW_HAS_DUAL_MOTORS
 					mc_interface_select_motor_thread(2);
 					mcconf = mc_interface_get_configuration();
+					motor = mcpwm_foc_get_motor_now();
 					commands_printf("\nMOTOR 2\n");
 					commands_printf("Motor Current       : %.1f A", (double)(mcconf->l_current_max));
-					commands_printf("Motor R             : %.2f mOhm", (double)(mcconf->foc_motor_r * 1e3));
-					commands_printf("Motor L             : %.2f uH", (double)(mcconf->foc_motor_l * 1e6));
-					commands_printf("Motor Flux Linkage  : %.3f mWb", (double)(mcconf->foc_motor_flux_linkage * 1e3));
+					commands_printf("Motor R             : %.2f mOhm", (double)(motor->m_res_est * 1e3));
+					commands_printf("Motor L             : %.2f uH", (double)(motor->m_injected_l * 1e6));
+					commands_printf("Motor Flux Linkage  : %.3f mWb", (double)(motor->m_injected_flux * 1e3));
+					commands_printf("WRSM Super State    : %d", (int)wrsm_supervisor_get_state());
+					commands_printf("Rotor Field Current : %.2f A (Target: %.2f A)", (double)motor->m_field_current, (double)motor->m_field_current_target);
+					commands_printf("Rotor Field Duty    : %.1f %%", (double)(motor->m_field_duty * 100.0));
+					commands_printf("Rotor Field Offset  : %.3f V", (double)mcconf->m_field_current_offset_v);
+					commands_printf("Rotor Field Enable  : %s", motor->m_field_enable_request ? "ENABLED" : "DISABLED");
 					commands_printf("Temp Comp           : %s", mcconf->foc_temp_comp ? "true" : "false");
 					if (mcconf->foc_sensor_mode == FOC_SENSOR_MODE_SENSORLESS) {
 						commands_printf("No sensors found, using sensorless mode.\n");
@@ -926,10 +939,11 @@ __attribute__((section(".text2"))) void terminal_process_string(char *str) {
 					commands_printf("\nMOTOR 1\n");
 #endif
 					const volatile mc_configuration *mcconf = mc_interface_get_configuration();
+					const volatile motor_all_state_t *motor = mcpwm_foc_get_motor_now();
 					commands_printf("Motor Current       : %.1f A", (double)(mcconf->l_current_max));
-					commands_printf("Motor R             : %.2f mOhm", (double)(mcconf->foc_motor_r * 1e3));
-					commands_printf("Motor L             : %.2f microH", (double)(mcconf->foc_motor_l * 1e6));
-					commands_printf("Motor Flux Linkage  : %.3f mWb", (double)(mcconf->foc_motor_flux_linkage * 1e3));
+					commands_printf("Motor R             : %.2f mOhm", (double)(motor->m_res_est * 1e3));
+					commands_printf("Motor L             : %.2f microH", (double)(motor->m_injected_l * 1e6));
+					commands_printf("Motor Flux Linkage  : %.3f mWb", (double)(motor->m_injected_flux * 1e3));
 					commands_printf("Temp Comp           : %s", mcconf->foc_temp_comp ? "true" : "false");
 					if (mcconf->foc_temp_comp) {
 						commands_printf("Temp Comp Base Temp : %.1f degC", (double)mcconf->foc_temp_comp_base_temp);

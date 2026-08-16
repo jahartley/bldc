@@ -199,11 +199,19 @@ static THD_FUNCTION(timeout_thread, arg) {
 
 		switch (timeout_kill_sw_mode) {
 		case KILL_SW_MODE_PPM_LOW:
+#ifndef HW_ICU_GPIO_BLOCKED
 			kill_sw = !palReadPad(HW_ICU_GPIO, HW_ICU_PIN);
+#else
+			kill_sw = false;
+#endif
 			break;
 
 		case KILL_SW_MODE_PPM_HIGH:
+#ifndef HW_ICU_GPIO_BLOCKED
 			kill_sw = palReadPad(HW_ICU_GPIO, HW_ICU_PIN);
+#else
+			kill_sw = false;
+#endif
 			break;
 
 		case KILL_SW_MODE_ADC2_LOW:

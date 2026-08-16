@@ -99,10 +99,10 @@ void wrsm_set_field_duty(motor_all_state_t *motor, float duty) {
     if (duty < 0.0f) duty = 0.0f;
     if (duty > 1.0f) duty = 1.0f;
 
-    // 2. Map float [0.0 - 1.0] to Timer ARR ticks (200 ticks = 5kHz at 1MHz) [4]
-    uint32_t width = (uint32_t)(duty * 200.0f);
+    // 2. Map float [0.0 - 1.0] to TIM4 ARR ticks (200 ticks = 5kHz at 1MHz)
+    uint16_t width = (uint16_t)(duty * 199.0f);
 
-    pwmEnableChannel(&PWMD4, 0, width);
+    TIM4->CCR1 = width;
     motor->m_field_duty = duty;
 }
 

@@ -202,7 +202,7 @@
 #define STM32_I2C_USE_I2C1                  TRUE
 #define STM32_I2C_USE_I2C2                  FALSE
 #else
-#define STM32_I2C_USE_I2C1                  FALSE
+#define STM32_I2C_USE_I2C1                  TRUE
 #define STM32_I2C_USE_I2C2                  FALSE // JAH PROTECT GPIOB 10
 #endif
 #define STM32_I2C_USE_I2C3                  FALSE

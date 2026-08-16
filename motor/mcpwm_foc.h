@@ -58,6 +58,7 @@ float mcpwm_foc_get_pid_pos_now(void);
 float mcpwm_foc_get_switching_frequency_now(void);
 float mcpwm_foc_get_sampling_frequency_now(void);
 float mcpwm_foc_get_rpm(void);
+motor_all_state_t* mcpwm_foc_get_motor_now(void);
 float mcpwm_foc_get_rpm_fast(void);
 float mcpwm_foc_get_rpm_faster(void);
 float mcpwm_foc_get_tot_current(void);

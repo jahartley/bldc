@@ -22,6 +22,36 @@
 #include "ch.h"
 #include "hal.h"
 
+#ifdef HW_SPI_DEV_BLOCKED
+#undef HW_SPI_DEV
+#define HW_SPI_DEV SPID3
+#undef HW_SPI_GPIO_AF
+#define HW_SPI_GPIO_AF 0
+#undef HW_SPI_PORT_NSS
+#define HW_SPI_PORT_NSS NULL
+#undef HW_SPI_PIN_NSS
+#define HW_SPI_PIN_NSS 0
+#undef HW_SPI_PORT_MOSI
+#define HW_SPI_PORT_MOSI NULL
+#undef HW_SPI_PIN_MOSI
+#define HW_SPI_PIN_MOSI 0
+#endif
+
+#ifdef HW_UART_DEV_BLOCKED
+#undef HW_UART_DEV
+#define HW_UART_DEV SD1
+#undef HW_UART_GPIO_AF
+#define HW_UART_GPIO_AF 0
+#undef HW_UART_TX_PORT
+#define HW_UART_TX_PORT NULL
+#undef HW_UART_TX_PIN
+#define HW_UART_TX_PIN 0
+#undef HW_UART_RX_PORT
+#define HW_UART_RX_PORT NULL
+#undef HW_UART_RX_PIN
+#define HW_UART_RX_PIN 0
+#endif
+
 // Stack area for the running encoder
 static THD_WORKING_AREA(encoder_thread_wa, 256);
 

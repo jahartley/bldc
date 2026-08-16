@@ -32,6 +32,7 @@
 static volatile bool m_is_running = false;
 
 uint32_t pwm_servo_init(uint32_t freq_hz, float duty) {
+#ifndef HW_ICU_GPIO_BLOCKED
 	// Ensure that there is no overflow and that the resolution is reasonable
 	utils_truncate_number_uint32(&freq_hz, TIM_CLOCK / 65000, TIM_CLOCK / 100);
 
@@ -67,22 +68,33 @@ uint32_t pwm_servo_init(uint32_t freq_hz, float duty) {
 	m_is_running = true;
 
 	return freq_hz;
+#else
+	(void)freq_hz;
+	(void)duty;
+	m_is_running = false;
+	return 0;
+#endif
 }
 
 void pwm_servo_init_servo(void) {
+#ifndef HW_ICU_GPIO_BLOCKED
 	pwm_servo_init(SERVO_OUT_RATE_HZ, 0.0);
+#endif
 }
 
 void pwm_servo_stop(void) {
+#ifndef HW_ICU_GPIO_BLOCKED
 	if (m_is_running) {
 		palSetPadMode(HW_ICU_GPIO, HW_ICU_PIN, PAL_MODE_INPUT);
 		TIM_DeInit(HW_ICU_TIMER);
 	}
+#endif
 
 	m_is_running = false;
 }
 
 float pwm_servo_set_duty(float duty) {
+#ifndef HW_ICU_GPIO_BLOCKED
 	if (!m_is_running) {
 		return -1.0;
 	}
@@ -97,10 +109,14 @@ float pwm_servo_set_duty(float duty) {
 	}
 
 	return (float)output / (float)HW_ICU_TIMER->ARR;
-
+#else
+	(void)duty;
+	return -1.0f;
+#endif
 }
 
 void pwm_servo_set_servo_out(float output) {
+#ifndef HW_ICU_GPIO_BLOCKED
 	if (!m_is_running) {
 		return;
 	}
@@ -116,6 +132,9 @@ void pwm_servo_set_servo_out(float output) {
 	} else if (HW_ICU_CHANNEL == ICU_CHANNEL_2) {
 		HW_ICU_TIMER->CCR2 = (uint32_t)us;
 	}
+#else
+	(void)output;
+#endif
 }
 
 bool pwm_servo_is_running(void) {

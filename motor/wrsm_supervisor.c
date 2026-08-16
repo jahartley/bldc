@@ -1,8 +1,11 @@
 #include "wrsm_supervisor.h"
 #include "wrsm_field_controller.h"
 #include "mcpwm_foc.h"
+#include "mc_interface.h"
 #include "utils_math.h"
 #include "hw.h"
+#include "ch.h"
+#include "hal.h"
 #include <math.h>
 
 // --- STATE MACHINE CONSTANTS (MGU MECHANICAL DOMAIN) ---
@@ -25,6 +28,7 @@ typedef struct {
 
 // State-local timer used to track timeouts and transient intervals
 static float state_timer = 0.0f;
+static motor_all_state_t *m_active_motor = NULL;
 
 static wrsm_super_state_t current_state = WRSM_SUPER_STATE_BOOT;   // The actual active state
 static wrsm_super_state_t requested_state = WRSM_SUPER_STATE_BOOT; // The mailbox target
@@ -69,7 +73,7 @@ static wrsm_super_state_t state_boot_tick(motor_all_state_t *motor, float dt) {
     float current_erpm = fabsf(mcpwm_foc_get_rpm());
     if (pole_pairs > 200.0f) { // no need to do this every pass...
         // Set pole pairs value by lookup on boot
-        pole_pairs = (float)motor->m_conf->foc_no_poles / 2.0f;
+        pole_pairs = (float)motor->m_conf->si_motor_poles / 2.0f;
         if (pole_pairs < 1.0f) { // divide by zero protection.
             pole_pairs = 8.0f;
         }
@@ -234,7 +238,7 @@ static void state_fault_entry(motor_all_state_t *motor) {
 
 static wrsm_super_state_t state_fault_tick(motor_all_state_t *motor, float dt) {
     // Check if the stator fault condition has cleared
-    if (motor->m_state != MC_STATE_FAULT) {
+    if (mc_interface_get_fault() == FAULT_CODE_NONE) {
         
         float current_erpm = fabsf(mcpwm_foc_get_rpm());
         float erpm_threshold = MGU_RPM_STOPPED_THRESHOLD * pole_pairs;
@@ -365,23 +369,14 @@ static void process_internal_transition(motor_all_state_t *motor) {
 // ============================================================================
 
 void wrsm_supervisor_init(motor_all_state_t *motor) {
+    m_active_motor = motor;
     state_timer = 0.0f;
-    float pole_pairs = (float)motor->m_conf->foc_no_poles / 2.0f;
-    if (pole_pairs == 0.0f) pole_pairs = 8.0f;
-    float current_erpm = mcpwm_foc_get_rpm();
-    float startup_mgu_rpm = current_erpm / pole_pairs;
-
-    // Hot Boot / Flying Start Check: Boot straight to Alternator if already spinning
-    if (startup_mgu_rpm > MGU_RPM_RUNNING_THRESHOLD) {
-        current_state = WRSM_SUPER_STATE_ALTERNATOR;
-        on_state_entry(motor, WRSM_SUPER_STATE_ALTERNATOR);
-    } else {
-        current_state = WRSM_SUPER_STATE_OFF;
-        on_state_entry(motor, WRSM_SUPER_STATE_OFF);
-    }
+    float pole_pairs_val = (float)motor->m_conf->si_motor_poles / 2.0f;
+    if (pole_pairs_val > 0.0f) pole_pairs = pole_pairs_val;
 }
 
 void wrsm_supervisor_update(motor_all_state_t *motor, float dt) {
+    m_active_motor = motor;
     state_timer += dt;
 
     // --- GLOBAL SAFETY TRANSITION INTERLOCKS ---
@@ -391,7 +386,7 @@ void wrsm_supervisor_update(motor_all_state_t *motor, float dt) {
     }
 
     // 2. Recoverable Inverter/Stator Fault Check (Normal recoverable fault)
-    if (motor->m_state == MC_STATE_FAULT && current_state != WRSM_SUPER_STATE_ESTOP) {
+    if (mc_interface_get_fault() != FAULT_CODE_NONE && current_state != WRSM_SUPER_STATE_ESTOP) {
         requested_state = WRSM_SUPER_STATE_FAULT;
     }
 
@@ -412,8 +407,10 @@ void wrsm_supervisor_update(motor_all_state_t *motor, float dt) {
     }
 }
 
-void wrsm_supervisor_request_state(motor_all_state_t *motor, wrsm_super_state_t requested_state) {
-    if (current_state == requested_state) {
+void wrsm_supervisor_request_state(wrsm_super_state_t new_requested_state) {
+    motor_all_state_t *motor = m_active_motor;
+
+    if (current_state == new_requested_state) {
         return;
     }
 

@@ -2,6 +2,7 @@
 #define WRSM_FIELD_CONTROLLER_H_
 
 #include "foc_math.h"
+#include "hw.h"
 
 // ============================================================================
 // --- JAH: WRSM ROTOR FIELD REGULATION INTERFACE ---

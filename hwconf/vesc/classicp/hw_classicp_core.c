@@ -29,6 +29,7 @@
 #include "comm_can.h"
 #include "utils.h"
 #include "shutdown.h"
+#include "wrsm_supervisor.h"
 
 typedef enum {
 	SWITCH_BOOTED = 0,
@@ -174,6 +175,7 @@ void hw_setup_adc_channels(void) {
 	}
 }
 
+#ifndef HW_I2C_DEV_BLOCKED
 void hw_start_i2c(void) {
 	i2cAcquireBus(&HW_I2C_DEV);
 
@@ -267,6 +269,11 @@ void hw_try_restore_i2c(void) {
 		i2cReleaseBus(&HW_I2C_DEV);
 	}
 }
+#else
+void hw_start_i2c(void) {}
+void hw_stop_i2c(void) {}
+void hw_try_restore_i2c(void) {}
+#endif
 
 void smart_switch_keep_on(void) {
 	palSetPad(SWITCH_OUT_GPIO, SWITCH_OUT_PIN);
@@ -402,86 +409,96 @@ static THD_FUNCTION(switch_color_thread, arg) {
 static THD_FUNCTION(smart_switch_thread, arg) {
 	(void)arg;
 	chRegSetThreadName("smart_switch");
-	systime_t switch_pressed_ts = chVTGetSystemTimeX();
+
+	// Always latch power gate ON
+	smart_switch_keep_on();
+
+	systime_t press_start_ts = 0;
+	bool was_pressed = false;
+	uint32_t blink_ticks = 0;
 
 	for (;;) {
-		const app_configuration *conf = app_get_configuration();
+		bool pressed = smart_switch_is_pressed();
+		wrsm_super_state_t state = wrsm_supervisor_get_state();
 
-		switch (switch_state) {
-		case SWITCH_BOOTED:
-			switch_state = SWITCH_TURN_ON_DELAY_ACTIVE;
-			break;
-
-		case SWITCH_TURN_ON_DELAY_ACTIVE:
-			switch_state = SWITCH_HELD_AFTER_TURN_ON;
-
-			// Wait for other systems to boot up before proceeding
-			while (!main_init_done()) {
-				chThdSleepMilliseconds(200);
-			}
-			break;
-
-		case SWITCH_HELD_AFTER_TURN_ON:
-			if (smart_switch_is_pressed() && conf->shutdown_mode != SHUTDOWN_MODE_ALWAYS_OFF) {
-				switch_state = SWITCH_HELD_AFTER_TURN_ON;
-			} else {
-				switch_state = SWITCH_TURNED_ON;
-			}
-			break;
-
-		case SWITCH_TURNED_ON:
-			if (conf->shutdown_mode == SHUTDOWN_MODE_ALWAYS_OFF) {
-				switch_bright = 1.0;
-				if (smart_switch_is_pressed()) {
-					switch_pressed_ts = chVTGetSystemTimeX();
+		// --- 1. AUTOMOTIVE PRESS-AND-HOLD START BUTTON LOGIC WITH 3.0S ACCIDENTAL PRESS GUARD ---
+		if (pressed) {
+			if (state == WRSM_SUPER_STATE_OFF || state == WRSM_SUPER_STATE_BOOT || state == WRSM_SUPER_STATE_STOPPING) {
+				if (!was_pressed) {
+					press_start_ts = chVTGetSystemTimeX();
+					was_pressed = true;
 				}
 
-				if (UTILS_AGE_S(switch_pressed_ts) > ((float)(SMART_SWITCH_MSECS_PRESSED_OFF) / 1000.0)) {
-					switch_state = SWITCH_SHUTTING_DOWN;
-				}
-			} else {
-				if (smart_switch_is_pressed() && conf->shutdown_mode != SHUTDOWN_MODE_ALWAYS_ON) {
-					switch_bright = 0.5;
-				} else {
-					switch_bright = 1.0;
-					switch_pressed_ts = chVTGetSystemTimeX();
-				}
-
-				if (UTILS_AGE_S(switch_pressed_ts) > ((float)(SMART_SWITCH_MSECS_PRESSED_OFF) / 1000.0)) {
-					switch_state = SWITCH_SHUTTING_DOWN;
+				// Must hold for 3.0 seconds continuously to guard against accidental taps
+				if (UTILS_AGE_S(press_start_ts) >= 3.0f) {
+					wrsm_supervisor_request_state(WRSM_SUPER_STATE_PRE_EXCITE);
 				}
 			}
-			break;
-
-		case SWITCH_SHUTTING_DOWN:
-			switch_bright = 0;
-			systime_t tStart = chVTGetSystemTimeX();
-			while (smart_switch_is_pressed()) {
-				chThdSleepMilliseconds(10);
-				if (UTILS_AGE_S(tStart) > 10.0) {
-					switch_pressed_ts = chVTGetSystemTimeX();
-					switch_state = SWITCH_TURNED_ON;
-					break;
-				}
+			// If in ALTERNATOR mode, button press does nothing!
+		} else {
+			was_pressed = false;
+			// Releasing button during PRE_EXCITE or CRANKING aborts start immediately (STOPPING -> OFF)
+			if (state == WRSM_SUPER_STATE_PRE_EXCITE || state == WRSM_SUPER_STATE_CRANKING) {
+				wrsm_supervisor_request_state(WRSM_SUPER_STATE_STOPPING);
 			}
-
-			if (switch_state == SWITCH_TURNED_ON) {
-				break;
-			}
-
-			shutdown_save_and_hold();
-			comm_can_shutdown(255);
-			smart_switch_shut_down();
-			chThdSleepMilliseconds(10000);
-			smart_switch_keep_on();
-			switch_state = SWITCH_TURN_ON_DELAY_ACTIVE;
-			break;
-
-		default:
-			break;
+			// If in ALTERNATOR mode, releasing button does nothing! Engine & VESC stay running.
 		}
 
-		chThdSleepMilliseconds(1);
+		// --- 2. SUPERVISOR STATE RGB LED COLOR & ANIMATION CONTROLLER ---
+		state = wrsm_supervisor_get_state();
+		blink_ticks++;
+
+		// If button is held during standby and waiting out the 3.0s guard delay: fast-blink Yellow!
+		if (was_pressed && (state == WRSM_SUPER_STATE_OFF || state == WRSM_SUPER_STATE_BOOT || state == WRSM_SUPER_STATE_STOPPING)) {
+			// Fast blink: toggle every 100ms (5 ticks @ 20ms sleep)
+			if ((blink_ticks / 5) % 2 == 0) {
+				LED_SWITCH_R_ON();
+				LED_SWITCH_G_ON();
+				LED_SWITCH_B_OFF(); // Yellow ON
+			} else {
+				LED_SWITCH_R_OFF();
+				LED_SWITCH_G_OFF();
+				LED_SWITCH_B_OFF(); // OFF
+			}
+		} else {
+			switch (state) {
+			case WRSM_SUPER_STATE_OFF:
+			case WRSM_SUPER_STATE_BOOT:
+			case WRSM_SUPER_STATE_STOPPING:
+				LED_SWITCH_R_OFF();
+				LED_SWITCH_G_OFF();
+				LED_SWITCH_B_ON();  // Dim Blue for Standby/Off
+				break;
+
+			case WRSM_SUPER_STATE_PRE_EXCITE:
+				LED_SWITCH_R_ON();
+				LED_SWITCH_G_ON();
+				LED_SWITCH_B_OFF(); // Solid Yellow (R+G) for Pre-excitation
+				break;
+
+			case WRSM_SUPER_STATE_CRANKING:
+				LED_SWITCH_R_OFF();
+				LED_SWITCH_G_ON();
+				LED_SWITCH_B_OFF(); // Green for Engine Cranking
+				break;
+
+			case WRSM_SUPER_STATE_ALTERNATOR:
+				LED_SWITCH_R_ON();
+				LED_SWITCH_G_ON();
+				LED_SWITCH_B_ON();  // White (R+G+B) for Alternator Active
+				break;
+
+			case WRSM_SUPER_STATE_FAULT:
+			case WRSM_SUPER_STATE_ESTOP:
+			default:
+				LED_SWITCH_R_ON();
+				LED_SWITCH_G_OFF();
+				LED_SWITCH_B_OFF(); // Red for Faults/ESTOP
+				break;
+			}
+		}
+
+		chThdSleepMilliseconds(20);
 	}
 }
 

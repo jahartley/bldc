@@ -67,11 +67,16 @@ static ICUConfig m_icucfg = {
 		icuwidthcb,
 		NULL,
 		NULL,
+#ifndef HW_ICU_GPIO_BLOCKED
 		HW_ICU_CHANNEL,
+#else
+		0,
+#endif
 		0
 };
 
 bool enc_pwm_init(bool update_abi) {
+#ifndef HW_ICU_GPIO_BLOCKED
 	m_update_abi = update_abi;
 	m_icu_update_cnt = 0;
 	m_speed_now = 0.0;
@@ -90,15 +95,21 @@ bool enc_pwm_init(bool update_abi) {
 	icuEnableNotifications(&HW_ICU_DEV);
 
 	return true;
+#else
+	(void)update_abi;
+	return false;
+#endif
 }
 
 void enc_pwm_deinit(void) {
+#ifndef HW_ICU_GPIO_BLOCKED
 	m_icu_update_cnt = 0;
 
 	if (HW_ICU_DEV.state == ICU_ACTIVE) {
 		icuStopCapture(&HW_ICU_DEV);
 		icuStop(&HW_ICU_DEV);
 	}
+#endif
 }
 
 float enc_pwm_read_deg(void) {

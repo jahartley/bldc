@@ -157,7 +157,7 @@ bool encoder_init(volatile mc_configuration *conf) {
 
 	// ssc (3 wire) hw spi w dma (sw spi using hw spi pins for now)
 	case SENSOR_PORT_MODE_TLE5012_SSC_HW: {
-#ifdef HW_SPI_DEV
+#if defined(HW_SPI_DEV) && !defined(HW_SPI_DEV_BLOCKED)
 		SENSOR_PORT_5V();
 
 		// reuse global config, so must set up complete ssc config

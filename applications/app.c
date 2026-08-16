@@ -31,6 +31,36 @@
 #include "pwm_servo.h"
 #include "servo_dec.h"
 
+// Weak stubs for optional hobby apps excluded from build
+__attribute__((weak)) void app_ppm_start(void) {}
+__attribute__((weak)) void app_ppm_configure(ppm_config *conf) { (void)conf; }
+__attribute__((weak)) float app_ppm_get_decoded_level(void) { return 0.0f; }
+
+__attribute__((weak)) void app_adc_start(bool use_external) { (void)use_external; }
+__attribute__((weak)) void app_adc_configure(adc_config *conf) { (void)conf; }
+__attribute__((weak)) float app_adc_get_decoded_level(void) { return 0.0f; }
+__attribute__((weak)) float app_adc_get_voltage(void) { return 0.0f; }
+__attribute__((weak)) float app_adc_get_decoded_level2(void) { return 0.0f; }
+__attribute__((weak)) float app_adc_get_voltage2(void) { return 0.0f; }
+
+__attribute__((weak)) void app_nunchuk_start(void) {}
+__attribute__((weak)) void app_nunchuk_configure(chuk_config *conf) { (void)conf; }
+__attribute__((weak)) float app_nunchuk_get_decoded_y(void) { return 0.0f; }
+__attribute__((weak)) void app_nunchuk_update_output(chuck_data *data) { (void)data; }
+
+__attribute__((weak)) void app_pas_start(bool use_external) { (void)use_external; }
+__attribute__((weak)) void app_pas_configure(pas_config *conf) { (void)conf; }
+__attribute__((weak)) void app_pas_stop(void) {}
+
+__attribute__((weak)) void app_uartcomm_start(UART_PORT port_number) { (void)port_number; }
+__attribute__((weak)) void app_uartcomm_configure(uint32_t baudrate, bool permanent_enabled, UART_PORT port_number) { (void)baudrate; (void)permanent_enabled; (void)port_number; }
+__attribute__((weak)) void app_uartcomm_initialize(void) {}
+__attribute__((weak)) void app_uartcomm_stop(UART_PORT port_number) { (void)port_number; }
+
+__attribute__((weak)) void app_ppm_stop(void) {}
+__attribute__((weak)) void app_adc_stop(void) {}
+__attribute__((weak)) void app_nunchuk_stop(void) {}
+
 // Private variables
 static app_configuration appconf = {0};
 static virtual_timer_t output_vt = {0};

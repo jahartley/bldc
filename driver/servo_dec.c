@@ -98,7 +98,11 @@ static ICUConfig icucfg = {
 		icuwidthcb,
 		NULL,
 		NULL,
+#ifndef HW_ICU_GPIO_BLOCKED
 		HW_ICU_CHANNEL,
+#else
+		0,
+#endif
 		0
 };
 
@@ -110,6 +114,7 @@ static ICUConfig icucfg = {
  * decoded. Can be NULL.
  */
 void servodec_init(void (*d_func)(void)) {
+#ifndef HW_ICU_GPIO_BLOCKED
 	icuStart(&HW_ICU_DEV, &icucfg);
 	palSetPadMode(HW_ICU_GPIO, HW_ICU_PIN, PAL_MODE_ALTERNATE(HW_ICU_GPIO_AF));
 	icuStartCapture(&HW_ICU_DEV);
@@ -124,12 +129,17 @@ void servodec_init(void (*d_func)(void)) {
 	done_func = d_func;
 
 	is_running = true;
+#else
+	(void)d_func;
+	is_running = false;
+#endif
 }
 
 /**
  * Stop the servo decoding driver
  */
 void servodec_stop(void) {
+#ifndef HW_ICU_GPIO_BLOCKED
 	if (is_running) {
 		icuStopCapture(&HW_ICU_DEV);
 		icuStop(&HW_ICU_DEV);
@@ -139,6 +149,7 @@ void servodec_stop(void) {
 		use_median_filter = false;
 		done_func = 0;
 	}
+#endif
 
 	is_running = false;
 }
