@@ -3612,6 +3612,18 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 				foc_observer_update(state_now->v_alpha, state_now->v_beta,
 						state_now->i_alpha, state_now->i_beta,
 						dt, &(motor_now->m_observer_state), &motor_now->m_phase_now_observer, motor_now);
+				// --- JAH: Math-Driven Closed-Loop Loss of Sync Shield ---
+				// If the observer flux magnitude collapses below the 50% floor,
+				// and we are NOT in an open-loop startup sequence, instantly float the gates.
+				// this is to prevent falling into open loop on decel to zero.
+				float observer_mag = NORM2_f(motor_now->m_observer_state.x1, motor_now->m_observer_state.x2);
+				if (observer_mag < (motor_now->m_injected_flux * 0.5f) && 
+					!motor_now->m_phase_observer_override) {
+					
+					motor_now->m_control_mode = CONTROL_MODE_NONE;
+					motor_now->m_state = MC_STATE_OFF;
+					stop_pwm_hw(motor_now); // Float stator phases immediately in the ISR!
+				}
 
 				// Compensate from the phase lag caused by the switching frequency. This is important for motors
 				// that run on high ERPM compared to the switching frequency.
@@ -4092,6 +4104,17 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 static void timer_update(motor_all_state_t *motor, float dt) {
 	const mc_configuration *conf_now = motor->m_conf;
 
+	// --- JAH: Manage Openloop Permission Flag ---
+    if (motor->m_state == MC_STATE_OFF) {
+        // When stopped or disabled, we reset the flag so the next start is allowed to use open-loop
+        motor->m_openloop_allowed = true;
+    } else if (!motor->m_phase_observer_override) {
+        // If the motor is running and we are NOT overriding the observer,
+        // our FOC sensorless observer has successfully converged and is tracking!
+        // Lock out any subsequent drop-downs into open loop.
+        motor->m_openloop_allowed = false;
+    }
+
 	// Calculate temperature-compensated parameters here
 	if (mc_interface_temp_motor_filtered() > -30.0) {
 		float comp_fact = 1.0 + 0.00386 * (mc_interface_temp_motor_filtered() - conf_now->foc_temp_comp_base_temp);
@@ -4106,6 +4129,10 @@ static void timer_update(motor_all_state_t *motor, float dt) {
 
 	utils_sys_lock_cnt();
 	utils_step_towards((float*)&motor->m_current_off_delay, 0.0, dt);
+
+	/* --- JAH: Disabled current-based auto-shutdown ---
+	* We prevent the VESC from sleeping based on current setpoints alone.
+    * The stator will remain active to clamp back-EMF, sleeping only via Speed-sync loss.
 	if (!motor->m_phase_override && motor->m_state == MC_STATE_RUNNING &&
 			(motor->m_control_mode == CONTROL_MODE_CURRENT ||
 					motor->m_control_mode == CONTROL_MODE_CURRENT_BRAKE ||
@@ -4128,6 +4155,7 @@ static void timer_update(motor_all_state_t *motor, float dt) {
 			stop_pwm_hw(motor);
 		}
 	}
+	*/ // --- END JAH Disable current-based auto-shutdown
 	utils_sys_unlock_cnt();
 
 	// Use this to study the openloop timers under experiment plot

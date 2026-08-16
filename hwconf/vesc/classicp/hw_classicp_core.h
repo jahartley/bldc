@@ -337,6 +337,12 @@
 #endif
 #define MCCONF_FOC_MOTOR_R				0.01160 //average stator resistance at 22 °C
 
+// Force default number of poles to 16 (8 pole pairs)
+#ifdef MCCONF_FOC_NO_POLES
+#undef MCCONF_FOC_NO_POLES
+#endif
+#define MCCONF_FOC_NO_POLES             16
+
 // --- FIELD RESISTANCE
 #define MGU_FIELD_R                  5.60    //field resistance at 22 °C
 // --- FIELD CURRENT SENSOR (ACS712-05B STANDARD DIRECT VIA ONBOARD 10k/10k) ---

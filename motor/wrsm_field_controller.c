@@ -183,52 +183,52 @@ void wrsm_update_field_control(motor_all_state_t *motor, float dt) {
     }
 
     // ACTIVE CLOSED-LOOP REGULATION (FOC Running, Intent is ON, HW is ON)
-    // --- STEP A: CALCULATE THE UNWEAKENED COPPER LOSS TARGET ---
-    float optimal_if = 0.0f;
-    if (motor->m_field_override_active) {
-        optimal_if = motor->m_field_override_value;
+    float target_if = 0.0f;
+    if (motor->m_field_override_active){
+        target_if = motor->m_field_override_current;
     } else {
+        // --- STEP A: CALCULATE THE UNWEAKENED COPPER LOSS TARGET ---
+        float optimal_if = 0.0f;
         float iq_target_abs = fabsf(motor->m_motor_state.iq_target);
         if (iq_target_abs > 0.1f) {
             optimal_if = 0.191f * sqrtf(iq_target_abs) - 0.087f;
         }
+        
+        float v_batt = motor->m_motor_state.v_bus;
+        float estimateMaxCurrent = v_batt / MGU_FIELD_R;
+        // Truncate optimal to available bounds [0A to current voltage limit]
+        utils_truncate_number(&optimal_if, 0.0f, estimateMaxCurrent);
+
+        // --- STEP B: RUN SATURATION-AWARE FLUX-WEAKENING ENVELOPE ALLOCATOR ---
+
+        // B1. Convert unweakened optimal current to Webers of magnetic flux linkage
+        float optimal_flux = wrsm_lookup_flux(optimal_if);
+
+        // B2. Convert high-speed stator-equivalent demand into Webers of flux reduction
+        // (Demanded flux = Stator FW Amps * Live D-Axis inductance)
+        float delta_flux_demanded = motor->m_i_fw_set * motor->m_injected_ld;
+
+        // B3. Subtract to find net target flux required inside the air gap
+        float target_flux = optimal_flux - delta_flux_demanded;
+
+        float unmet_stator_fw_id = 0.0f;
+
+        if (target_flux >= 0.00308000f) {
+            // STAGE 1: Rotor winding has enough magnetic headroom to weakening on its own
+            target_if = wrsm_lookup_if_from_flux(target_flux);
+            unmet_stator_fw_id = 0.0f; // Stator i_d remains at 0.0A!
+        } else {
+            // STAGE 2: Rotor field has collapsed to 0A; stator must handle the remaining permanent magnets
+            target_if = 0.0f;
+            float unmet_flux = 0.00308000f - target_flux;
+
+            // Convert remaining unmet flux back to stator d-axis current using L_d(0) = 30.13 uH (0.00003013 H)
+            unmet_stator_fw_id = unmet_flux / 0.00003013f;
+        }
+        motor->m_stator_fw_id = unmet_stator_fw_id; // Feed to high-frequency FOC current controller
     }
-    float v_batt = motor->m_motor_state.v_bus;
-    float estimateMaxCurrent = v_batt / MGU_FIELD_R;
-    // Truncate optimal to available bounds [0A to current voltage limit]
-    utils_truncate_number(&optimal_if, 0.0f, estimateMaxCurrent);
-
-    // --- STEP B: RUN SATURATION-AWARE FLUX-WEAKENING ENVELOPE ALLOCATOR ---
-
-    // B1. Convert unweakened optimal current to Webers of magnetic flux linkage
-    float optimal_flux = wrsm_lookup_flux(optimal_if);
-
-    // B2. Convert high-speed stator-equivalent demand into Webers of flux reduction
-    // (Demanded flux = Stator FW Amps * Live D-Axis inductance)
-    float delta_flux_demanded = motor->m_i_fw_set * motor->m_injected_ld;
-
-    // B3. Subtract to find net target flux required inside the air gap
-    float target_flux = optimal_flux - delta_flux_demanded;
-
-    float target_if = 0.0f;
-    float unmet_stator_fw_id = 0.0f;
-
-    if (target_flux >= 0.00308000f) {
-        // STAGE 1: Rotor winding has enough magnetic headroom to weakening on its own
-        target_if = wrsm_lookup_if_from_flux(target_flux);
-        unmet_stator_fw_id = 0.0f; // Stator i_d remains at 0.0A!
-    } else {
-        // STAGE 2: Rotor field has collapsed to 0A; stator must handle the remaining permanent magnets
-        target_if = 0.0f;
-        float unmet_flux = 0.00308000f - target_flux;
-
-        // Convert remaining unmet flux back to stator d-axis current using L_d(0) = 30.13 uH (0.00003013 H)
-        unmet_stator_fw_id = unmet_flux / 0.00003013f;
-    }
-
     motor->m_field_current_target = target_if;
-    motor->m_stator_fw_id = unmet_stator_fw_id; // Feed to high-frequency FOC current controller
-
+    
     // --- STEP C: PI CLOSED-LOOP CURRENT CONTROLLER ---
     float error = target_if - measured_if;
     float p_term = error * field_pid.kp;
