@@ -27,6 +27,7 @@
 #include "wrsm_supervisor.h"
 #include "mc_interface.h"
 #include "commands.h"
+#include "confgenerator.h"
 #include "hw.h"
 #include "comm_can.h"
 #include "utils_math.h"
@@ -68,7 +69,7 @@ static volatile int fault_vec_write = 0;
 static terminal_callback_struct callbacks[CALLBACK_LEN];
 static int callback_write = 0;
 
-__attribute__((section(".text2"))) void terminal_process_string(char *str) {
+void terminal_process_string(char *str) {
 	// Echo command so user can see what they previously ran
 	commands_printf("-> %s \n", str);
 
@@ -1000,6 +1001,68 @@ __attribute__((section(".text2"))) void terminal_process_string(char *str) {
 		}
 	} else if (strcmp(argv[0], "uptime") == 0) {
 		commands_printf("Uptime: %.2f s\n", (double)chVTGetSystemTimeX() / (double)CH_CFG_ST_FREQUENCY);
+	} else if (strcmp(argv[0], "wrsm") == 0) {
+		const volatile motor_all_state_t *motor = mcpwm_foc_get_motor_now();
+		const volatile mc_configuration *mcconf = mc_interface_get_configuration();
+		const char *mc_state_str = "UNKNOWN";
+		switch (motor->m_state) {
+			case MC_STATE_OFF:        mc_state_str = "OFF"; break;
+			case MC_STATE_DETECTING:  mc_state_str = "DETECTING"; break;
+			case MC_STATE_RUNNING:    mc_state_str = "RUNNING"; break;
+			case MC_STATE_FULL_BRAKE: mc_state_str = "FULL_BRAKE"; break;
+		}
+		const char *ctrl_mode_str = "UNKNOWN";
+		switch (motor->m_control_mode) {
+			case CONTROL_MODE_DUTY:                ctrl_mode_str = "DUTY"; break;
+			case CONTROL_MODE_SPEED:               ctrl_mode_str = "SPEED"; break;
+			case CONTROL_MODE_CURRENT:             ctrl_mode_str = "CURRENT"; break;
+			case CONTROL_MODE_CURRENT_BRAKE:       ctrl_mode_str = "CURRENT_BRAKE"; break;
+			case CONTROL_MODE_POS:                 ctrl_mode_str = "POS"; break;
+			case CONTROL_MODE_HANDBRAKE:           ctrl_mode_str = "HANDBRAKE"; break;
+			case CONTROL_MODE_OPENLOOP:            ctrl_mode_str = "OPENLOOP"; break;
+			case CONTROL_MODE_OPENLOOP_PHASE:      ctrl_mode_str = "OPENLOOP_PHASE"; break;
+			case CONTROL_MODE_OPENLOOP_DUTY:       ctrl_mode_str = "OPENLOOP_DUTY"; break;
+			case CONTROL_MODE_OPENLOOP_DUTY_PHASE: ctrl_mode_str = "OPENLOOP_DUTY_PHASE"; break;
+			case CONTROL_MODE_NONE:                ctrl_mode_str = "NONE"; break;
+		}
+		commands_printf("=== WRSM AUTOMOTIVE STATUS ===");
+		commands_printf("Supervisor State    : %d", (int)wrsm_supervisor_get_state());
+		commands_printf("Motor MC State      : %s (%d)", mc_state_str, (int)motor->m_state);
+		commands_printf("Motor Control Mode  : %s (%d)", ctrl_mode_str, (int)motor->m_control_mode);
+		commands_printf("Rotor Field Current : %.2f A (Target: %.2f A)", (double)motor->m_field_current, (double)motor->m_field_current_target);
+		commands_printf("Rotor Field Duty    : %.1f %%", (double)(motor->m_field_duty * 100.0));
+		commands_printf("Rotor Field Voltage : %.3f V (Offset: %.3f V)", (double)ADC_VOLTS(ADC_IND_EXT), (double)mcconf->m_field_current_offset_v);
+		commands_printf("Rotor Field Enable  : %s", motor->m_field_enable_request ? "ENABLED" : "DISABLED");
+		commands_printf("Injected Flux       : %.3f mWb", (double)(motor->m_injected_flux * 1e3));
+		commands_printf("Injected Ld / Lq    : %.2f uH / %.2f uH", (double)(motor->m_injected_ld * 1e6), (double)(motor->m_injected_lq * 1e6));
+		commands_printf("Button Switch State : %s\n", smart_switch_is_pressed() ? "PRESSED" : "RELEASED");
+	} else if (strcmp(argv[0], "conf_default") == 0) {
+		mc_configuration *mcconf = mempools_alloc_mcconf();
+		*mcconf = *mc_interface_get_configuration();
+		confgenerator_set_defaults_mcconf(mcconf);
+		mc_interface_set_configuration(mcconf);
+		conf_general_store_mc_configuration(mcconf, mc_interface_get_motor_thread() == 2 ? true : false);
+		mempools_free_mcconf(mcconf);
+		commands_printf("Default motor configuration restored and saved to flash.\n");
+	} else if (strcmp(argv[0], "field_override") == 0) {
+		motor_all_state_t *motor = (motor_all_state_t*)mcpwm_foc_get_motor_now();
+		if (argc == 2) {
+			if (strcmp(argv[1], "off") == 0) {
+				motor->m_field_override_active = false;
+				motor->m_field_override_current = 0.0f;
+				commands_printf("Field override DISABLED (Automatic loss-minimization curve control active).\n");
+			} else {
+				float current = 0.0f;
+				sscanf(argv[1], "%f", &current);
+				motor->m_field_override_current = current;
+				motor->m_field_override_active = true;
+				commands_printf("Field override ENABLED: Target Field Current = %.2f A\n", (double)current);
+			}
+		} else {
+			commands_printf("Field Override Status: %s", motor->m_field_override_active ? "ENABLED" : "DISABLED");
+			commands_printf("Target Field Current : %.2f A", (double)motor->m_field_override_current);
+			commands_printf("Usage: field_override [current_amps | off]\n");
+		}
 	} else if (strcmp(argv[0], "hall_analyze") == 0) {
 		if (argc == 2) {
 			float current = -1.0;

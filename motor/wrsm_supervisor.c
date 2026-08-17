@@ -14,7 +14,7 @@
 #define MGU_RPM_RUNNING_THRESHOLD   2400.0f // MGU RPM above which power generation is active
 #define MGU_RPM_STALL_THRESHOLD     1200.0f // MGU RPM below which stall-recovery is triggered
 #define MGU_RPM_STOPPED_THRESHOLD   10.0f  // MGU RPM below which MGU is considered stationary
-#define CRANK_TIMEOUT_SEC           10.0f   // Maximum allowed cranking duration at start speed
+#define CRANK_TIMEOUT_SEC           30.0f   // Maximum allowed cranking duration at start speed
 #define CRANK_RAMP_SEC              3.0f    // Duration to ramp to start speed
 #define PRE_EXCITE_TIMEOUT_SEC      0.15f   // Maximum allowed time to build rotor flux
 #define STALL_RECOVERY_TIMEOUT      1.5f    // Maximum duration to attempt a flying recovery
@@ -33,7 +33,7 @@ static motor_all_state_t *m_active_motor = NULL;
 static wrsm_super_state_t current_state = WRSM_SUPER_STATE_BOOT;   // The actual active state
 static wrsm_super_state_t requested_state = WRSM_SUPER_STATE_BOOT; // The mailbox target
 
-static float pole_pairs = 201.0f;
+static float pole_pairs = 8.0f;
 
 // ============================================================================
 // --- STATE-SPECIFIC HANDLERS ---
@@ -71,14 +71,7 @@ static void state_boot_entry(motor_all_state_t *motor) { // This should never ac
 static wrsm_super_state_t state_boot_tick(motor_all_state_t *motor, float dt) {
     wrsm_set_field_enable(motor, true); // no specific reason this should be off.
     float current_erpm = fabsf(mcpwm_foc_get_rpm());
-    if (pole_pairs > 200.0f) { // no need to do this every pass...
-        // Set pole pairs value by lookup on boot
-        pole_pairs = (float)motor->m_conf->si_motor_poles / 2.0f;
-        if (pole_pairs < 1.0f) { // divide by zero protection.
-            pole_pairs = 8.0f;
-        }
-    }
-    
+        
     float erpm_threshold = MGU_RPM_STOPPED_THRESHOLD * pole_pairs;
     // transition off boot after first pass through boot tick
     if (current_erpm > erpm_threshold) {
@@ -96,9 +89,15 @@ static void state_stopping_entry(motor_all_state_t *motor) {
 }
 
 static wrsm_super_state_t state_stopping_tick(motor_all_state_t *motor, float dt) {
+    // If stopping occurred during Open-Loop (standstill / low speed start),
+    // float the gates immediately since there is no high-speed BEMF!
+    mcpwm_foc_stop_pwm(false);
+    if (motor->m_phase_observer_override) {
+        mcpwm_foc_stop_pwm(false); // Sets m_state = MC_STATE_OFF & clears override
+        return WRSM_SUPER_STATE_OFF;
+    }
     // watch for FOC Control to transistion to MC_STATE_OFF/CONTROL_MODE_NONE at minimum ERPM
-
-    if (motor->m_state == MC_STATE_OFF || motor->m_control_mode == CONTROL_MODE_NONE) {
+    if (motor->m_state == MC_STATE_OFF) {
         return WRSM_SUPER_STATE_OFF; // Stator shut down complete, go to off.
     }
 
@@ -117,7 +116,7 @@ static wrsm_super_state_t state_pre_excite_guard(motor_all_state_t *motor, wrsm_
         }
     }
     // Prevent entering PRE_EXCITE if stator control is not off/stopped.
-    if (!(motor->m_state == MC_STATE_OFF && motor->m_control_mode == CONTROL_MODE_NONE)) {
+    if (motor->m_state != MC_STATE_OFF) {
         return WRSM_SUPER_STATE_FAULT;
     }
     // RPM Guard: Prevent entering PRE_EXCITE if the MGU is already spinning
@@ -156,14 +155,15 @@ static wrsm_super_state_t state_cranking_guard(motor_all_state_t *motor, wrsm_su
 
 static void state_cranking_entry(motor_all_state_t *motor) {
     // rotor current should be maxed already, give currnent control back to the automatic setting.
-    motor->m_field_override_active = false;
-    motor->m_field_override_current = 0.0f;
+    motor->m_field_override_active = true;
+    motor->m_field_override_current = 2.5f;
 
     float target_erpm = MGU_START_TARGET_RPM * pole_pairs;
 
     // Calculate required acceleration rate (Delta ERPM / Time)
     float required_ramp_rate = target_erpm / CRANK_RAMP_SEC;
-
+    // preload speed pid I term
+    motor->m_speed_i_term = 0.40f;
     // Apply calculated ramp rate dynamically to configuration
     motor->m_conf->s_pid_ramp_erpms_s = required_ramp_rate;
 
@@ -173,7 +173,7 @@ static void state_cranking_entry(motor_all_state_t *motor) {
 
 static wrsm_super_state_t state_cranking_tick(motor_all_state_t *motor, float dt) {
     float current_mgu_erpm = fabsf(mcpwm_foc_get_rpm());
-    float started_threshold_erpm = MGU_START_TARGET_RPM * pole_pairs * 1.2f; //120% of start erpm
+    float started_threshold_erpm = MGU_START_TARGET_RPM * pole_pairs * 1.5f; //120% of start erpm
 
     if (current_mgu_erpm > started_threshold_erpm) { // Already beyond 120% target_erpm, must be driven by engine.
         return WRSM_SUPER_STATE_ALTERNATOR;
@@ -190,7 +190,7 @@ static void state_alternator_entry(motor_all_state_t *motor) {
 
 static wrsm_super_state_t state_alternator_tick(motor_all_state_t *motor, float dt) {
     // check for rpm drop so low that stator has turned off unexpectedly.
-    if (!(motor->m_state == MC_STATE_OFF && motor->m_control_mode == CONTROL_MODE_NONE)) {
+    if (motor->m_state == MC_STATE_OFF) {
         //return WRSM_SUPER_STATE_FAULT;
         return WRSM_SUPER_STATE_OFF;
     }
@@ -371,8 +371,7 @@ static void process_internal_transition(motor_all_state_t *motor) {
 void wrsm_supervisor_init(motor_all_state_t *motor) {
     m_active_motor = motor;
     state_timer = 0.0f;
-    float pole_pairs_val = (float)motor->m_conf->si_motor_poles / 2.0f;
-    if (pole_pairs_val > 0.0f) pole_pairs = pole_pairs_val;
+    pole_pairs = 8.0f;
 }
 
 void wrsm_supervisor_update(motor_all_state_t *motor, float dt) {
@@ -422,9 +421,9 @@ void wrsm_supervisor_request_state(wrsm_super_state_t new_requested_state) {
     }
 
     // 2. State-Specific Guard Check
-    wrsm_super_state_t resolved_state = requested_state;
-    if (state_table[requested_state].guard) {
-        resolved_state = state_table[requested_state].guard(motor, current_state);
+    wrsm_super_state_t resolved_state = new_requested_state;
+    if (state_table[new_requested_state].guard) {
+        resolved_state = state_table[new_requested_state].guard(motor, current_state);
     }
 
     // If the guard decided to stay where we are (resolved == current), abort transition
@@ -433,12 +432,13 @@ void wrsm_supervisor_request_state(wrsm_super_state_t new_requested_state) {
     }
 
     // Execute state entry action EXACTLY ONCE
-    if (state_table[requested_state].on_entry) {
-        state_table[requested_state].on_entry(motor);
+    if (state_table[resolved_state].on_entry) {
+        state_table[resolved_state].on_entry(motor);
     }
 
     // Accept transition and clear local timer
-    current_state = requested_state;
+    current_state = resolved_state;
+    requested_state = resolved_state;
     state_timer = 0.0f;
 }
 

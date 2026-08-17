@@ -366,12 +366,74 @@
 #ifdef MCCONF_S_PID_MIN_ERPM
 #undef MCCONF_S_PID_MIN_ERPM
 #endif
-#define MCCONF_S_PID_MIN_ERPM           0.0f
+#define MCCONF_S_PID_MIN_RPM           0.0f
 // no braking so that we dont try to brake the engine as it fires.
 #ifdef MCCONF_S_PID_ALLOW_BRAKING
 #undef MCCONF_S_PID_ALLOW_BRAKING
 #endif
 #define MCCONF_S_PID_ALLOW_BRAKING      false
+
+// 60A instant open-loop starting boost current for engine cranking
+#ifdef MCCONF_FOC_SL_OPENLOOP_BOOST_Q
+#undef MCCONF_FOC_SL_OPENLOOP_BOOST_Q
+#endif
+#define MCCONF_FOC_SL_OPENLOOP_BOOST_Q  60.0f
+// ERPM to hand off to sensorless observer.
+#ifdef MCCONF_FOC_SL_ERPM
+#undef MCCONF_FOC_SL_ERPM
+#endif
+#define MCCONF_FOC_SL_ERPM        1000.0f
+
+// ERPM to start blending with sensorless observer.
+#ifdef MCCONF_FOC_SL_ERPM_START
+#undef MCCONF_FOC_SL_ERPM_START
+#endif
+#define MCCONF_FOC_SL_ERPM_START  800.0f
+
+// Open-Loop Ramp Timing
+// Time before we start spinning
+#ifdef MCCONF_FOC_SL_OPENLOOP_T_LOCK
+#undef MCCONF_FOC_SL_OPENLOOP_T_LOCK
+#endif
+#define MCCONF_FOC_SL_OPENLOOP_T_LOCK  0.0f
+// Time to reach MCCONF_FOC_SL_ERPM
+#ifdef MCCONF_FOC_SL_OPENLOOP_T_RAMP
+#undef MCCONF_FOC_SL_OPENLOOP_T_RAMP
+#endif
+#define MCCONF_FOC_SL_OPENLOOP_T_RAMP  1.0f
+// Time to hold at MCCONF_FOC_SL_ERPM before switching to sensorless control
+#ifdef MCCONF_FOC_SL_OPENLOOP_TIME
+#undef MCCONF_FOC_SL_OPENLOOP_TIME
+#endif
+#define MCCONF_FOC_SL_OPENLOOP_TIME    0.00f
+
+// Tuned Speed PID gains for 300A Max Automotive Engine Cranking
+// stock P is 0.002, recommended was 0.015
+#ifdef MCCONF_S_PID_KP
+#undef MCCONF_S_PID_KP
+#endif
+#define MCCONF_S_PID_KP                0.03f 
+
+#ifdef MCCONF_S_PID_KI
+#undef MCCONF_S_PID_KI
+#endif
+#define MCCONF_S_PID_KI                0.040f
+
+#ifdef MCCONF_S_PID_KD
+#undef MCCONF_S_PID_KD
+#endif
+#define MCCONF_S_PID_KD                0.0003f
+
+#ifdef MCCONF_S_PID_KD_FILTER
+#undef MCCONF_S_PID_KD_FILTER
+#endif
+#define MCCONF_S_PID_KD_FILTER         0.20f
+
+// Disable app control signal timeout (ignore missing RC control inputs)
+#ifdef APPCONF_TIMEOUT_MSEC
+#undef APPCONF_TIMEOUT_MSEC
+#endif
+#define APPCONF_TIMEOUT_MSEC           0
 
 
 // JAH ADDED FAST LOOKUP TABLES ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

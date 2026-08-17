@@ -322,20 +322,20 @@ static THD_FUNCTION(switch_color_thread, arg) {
 	float switch_red_old = switch_red_old;
 	float switch_green_old = switch_green;
 	float switch_blue_old = switch_blue;
-	float wh_left;
-	float left = mc_interface_get_battery_level(&wh_left);
+	// float wh_left;
+	// float left = mc_interface_get_battery_level(&wh_left);
 
-	if (left < 0.5) {
-		float intense = utils_map(left,0.0, 0.5, 0.0, 1.0);
-		utils_truncate_number(&intense,0,1);
-		switch_blue = intense;
-		switch_red  = 1.0-intense;
-	} else {
-		float intense = utils_map(left , 0.5, 1.0, 0.0, 1.0);
-		utils_truncate_number(&intense,0,1);
-		switch_green = intense;
-		switch_blue  = 1.0-intense;
-	}
+	// if (left < 0.5) {
+	// 	float intense = utils_map(left,0.0, 0.5, 0.0, 1.0);
+	// 	utils_truncate_number(&intense,0,1);
+	// 	switch_blue = intense;
+	// 	switch_red  = 1.0-intense;
+	// } else {
+	// 	float intense = utils_map(left , 0.5, 1.0, 0.0, 1.0);
+	// 	utils_truncate_number(&intense,0,1);
+	// 	switch_green = intense;
+	// 	switch_blue  = 1.0-intense;
+	// }
 
 	for (int i = 0; i < 100; i++) {
 		float red_now = utils_map((float) i,0.0, 100.0, switch_red_old, switch_red);
@@ -348,6 +348,8 @@ static THD_FUNCTION(switch_color_thread, arg) {
 	}
 
 	for (;;) {
+		bool pressed = smart_switch_is_pressed();
+		wrsm_super_state_t state = wrsm_supervisor_get_state();
 		mc_fault_code fault = mc_interface_get_fault();
 
 		if (fault != FAULT_CODE_NONE) {
@@ -362,23 +364,61 @@ static THD_FUNCTION(switch_color_thread, arg) {
 
 			chThdSleepMilliseconds(500);
 		} else {
-			left = mc_interface_get_battery_level(&wh_left);
-			if(left < 0.5){
-				float intense = utils_map(left,0.0, 0.5, 0.0, 1.0);
-				utils_truncate_number(&intense,0,1);
-				switch_blue = intense;
-				switch_red  = 1.0-intense;
-				switch_green = 0;
-			}else{
-				float intense = utils_map(left , 0.5, 1.0, 0.0, 1.0);
-				utils_truncate_number(&intense,0,1);
-				switch_green = intense;
-				switch_blue  = 1.0-intense;
-				switch_red = 0;
+			static uint32_t blink_ticks = 0;
+			blink_ticks++;
+
+			// If button is held during standby and waiting out the 3.0s guard delay: fast-blink Yellow!
+			if (pressed && (state == WRSM_SUPER_STATE_OFF)) {
+				if ((blink_ticks / 5) % 2 == 0) {
+					switch_red = 1.0f;
+					switch_green = 1.0f;
+					switch_blue = 0.0f; // Yellow ON
+				} else {
+					switch_red = 0.0f;
+					switch_green = 0.0f;
+					switch_blue = 0.0f; // OFF
+				}
+			} else {
+				switch (state) {
+				case WRSM_SUPER_STATE_OFF:
+				case WRSM_SUPER_STATE_BOOT:
+				case WRSM_SUPER_STATE_STOPPING:
+					switch_blue = 1.0f;
+					switch_green = 0.0f;
+					switch_red = 0.0f; // Blue for Standby/Off
+					break;
+
+				case WRSM_SUPER_STATE_PRE_EXCITE:
+					switch_red = 1.0f;
+					switch_green = 1.0f;
+					switch_blue = 0.0f; // Solid Yellow (R+G) for Pre-excitation
+					break;
+
+				case WRSM_SUPER_STATE_CRANKING:
+					switch_red = 0.0f;
+					switch_green = 1.0f;
+					switch_blue = 0.0f; // Green for Engine Cranking
+					break;
+
+				case WRSM_SUPER_STATE_ALTERNATOR:
+					switch_red = 1.0f;
+					switch_green = 1.0f;
+					switch_blue = 1.0f; // White (R+G+B) for Alternator Active
+					break;
+
+				case WRSM_SUPER_STATE_FAULT:
+				case WRSM_SUPER_STATE_ESTOP:
+				default:
+					switch_red = 1.0f;
+					switch_green = 0.0f;
+					switch_blue = 0.0f; // Red for Faults/ESTOP
+					break;
+				}
 			}
-			ledpwm_set_intensity(LED_HW1, switch_bright*switch_blue);
-			ledpwm_set_intensity(LED_HW2, switch_bright*switch_green);
-			ledpwm_set_intensity(LED_HW3, switch_bright*switch_red);
+
+			ledpwm_set_intensity(LED_HW1, switch_bright * switch_blue);
+			ledpwm_set_intensity(LED_HW2, switch_bright * switch_green);
+			ledpwm_set_intensity(LED_HW3, switch_bright * switch_red);
 		}
 
 		// Config check
@@ -423,7 +463,7 @@ static THD_FUNCTION(smart_switch_thread, arg) {
 
 		// --- 1. AUTOMOTIVE PRESS-AND-HOLD START BUTTON LOGIC WITH 3.0S ACCIDENTAL PRESS GUARD ---
 		if (pressed) {
-			if (state == WRSM_SUPER_STATE_OFF || state == WRSM_SUPER_STATE_BOOT || state == WRSM_SUPER_STATE_STOPPING) {
+			if (state == WRSM_SUPER_STATE_OFF) {
 				if (!was_pressed) {
 					press_start_ts = chVTGetSystemTimeX();
 					was_pressed = true;
@@ -442,60 +482,6 @@ static THD_FUNCTION(smart_switch_thread, arg) {
 				wrsm_supervisor_request_state(WRSM_SUPER_STATE_STOPPING);
 			}
 			// If in ALTERNATOR mode, releasing button does nothing! Engine & VESC stay running.
-		}
-
-		// --- 2. SUPERVISOR STATE RGB LED COLOR & ANIMATION CONTROLLER ---
-		state = wrsm_supervisor_get_state();
-		blink_ticks++;
-
-		// If button is held during standby and waiting out the 3.0s guard delay: fast-blink Yellow!
-		if (was_pressed && (state == WRSM_SUPER_STATE_OFF || state == WRSM_SUPER_STATE_BOOT || state == WRSM_SUPER_STATE_STOPPING)) {
-			// Fast blink: toggle every 100ms (5 ticks @ 20ms sleep)
-			if ((blink_ticks / 5) % 2 == 0) {
-				LED_SWITCH_R_ON();
-				LED_SWITCH_G_ON();
-				LED_SWITCH_B_OFF(); // Yellow ON
-			} else {
-				LED_SWITCH_R_OFF();
-				LED_SWITCH_G_OFF();
-				LED_SWITCH_B_OFF(); // OFF
-			}
-		} else {
-			switch (state) {
-			case WRSM_SUPER_STATE_OFF:
-			case WRSM_SUPER_STATE_BOOT:
-			case WRSM_SUPER_STATE_STOPPING:
-				LED_SWITCH_R_OFF();
-				LED_SWITCH_G_OFF();
-				LED_SWITCH_B_ON();  // Dim Blue for Standby/Off
-				break;
-
-			case WRSM_SUPER_STATE_PRE_EXCITE:
-				LED_SWITCH_R_ON();
-				LED_SWITCH_G_ON();
-				LED_SWITCH_B_OFF(); // Solid Yellow (R+G) for Pre-excitation
-				break;
-
-			case WRSM_SUPER_STATE_CRANKING:
-				LED_SWITCH_R_OFF();
-				LED_SWITCH_G_ON();
-				LED_SWITCH_B_OFF(); // Green for Engine Cranking
-				break;
-
-			case WRSM_SUPER_STATE_ALTERNATOR:
-				LED_SWITCH_R_ON();
-				LED_SWITCH_G_ON();
-				LED_SWITCH_B_ON();  // White (R+G+B) for Alternator Active
-				break;
-
-			case WRSM_SUPER_STATE_FAULT:
-			case WRSM_SUPER_STATE_ESTOP:
-			default:
-				LED_SWITCH_R_ON();
-				LED_SWITCH_G_OFF();
-				LED_SWITCH_B_OFF(); // Red for Faults/ESTOP
-				break;
-			}
 		}
 
 		chThdSleepMilliseconds(20);

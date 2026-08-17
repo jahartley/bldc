@@ -224,7 +224,7 @@ endif
 ##############################
 
 ifneq ("$(wildcard $(ARM_SDK_DIR))","")
-  ARM_SDK_PREFIX := $(ARM_SDK_DIR)/bin/arm-none-eabi-
+  ARM_SDK_PREFIX ?= $(ARM_SDK_DIR)/bin/arm-none-eabi-
 else
   ifneq ($(MAKECMDGOALS),arm_sdk_install)
     $(info **WARNING** ARM-SDK not in $(ARM_SDK_DIR)  Please run 'make arm_sdk_install')

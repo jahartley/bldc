@@ -174,7 +174,7 @@ void wrsm_update_field_control(motor_all_state_t *motor, float dt) {
 
     
     // CHECK 4: STANDBY / IDLE (MC_STATE_OFF but Intent is ON & Hardware is ON)
-    if (motor->m_state == MC_STATE_OFF) {
+    if (motor->m_state == MC_STATE_OFF && !motor->m_field_override_active) {
         wrsm_set_field_duty(motor, 0.0f); // Force 0% duty (active low-side freewheeling ready)
         field_pid.integrator = 0.0f;
         field_pid.prev_error = 0.0f;
@@ -186,6 +186,9 @@ void wrsm_update_field_control(motor_all_state_t *motor, float dt) {
     float target_if = 0.0f;
     if (motor->m_field_override_active){
         target_if = motor->m_field_override_current;
+    } else if (motor->m_phase_observer_override) {
+        // OPEN LOOP START FULL FIELD!!!
+        target_if = 2.8f;
     } else {
         // --- STEP A: CALCULATE THE UNWEAKENED COPPER LOSS TARGET ---
         float optimal_if = 0.0f;
