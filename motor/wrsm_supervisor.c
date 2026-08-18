@@ -1,6 +1,7 @@
 #include "wrsm_supervisor.h"
 #include "wrsm_field_controller.h"
 #include "mcpwm_foc.h"
+#include "foc_math.h"
 #include "mc_interface.h"
 #include "utils_math.h"
 #include "hw.h"
@@ -10,12 +11,12 @@
 
 // --- STATE MACHINE CONSTANTS (MGU MECHANICAL DOMAIN) ---
 #define MGU_MIN_ALTERNATOR_RPM      1500.0f // minimum MGU rpm to set alternator mode
-#define MGU_START_TARGET_RPM        600.0f  // Start mode target RPM
+//#define MGU_START_TARGET_RPM        600.0f  // Start mode target RPM
 #define MGU_RPM_RUNNING_THRESHOLD   2400.0f // MGU RPM above which power generation is active
 #define MGU_RPM_STALL_THRESHOLD     1200.0f // MGU RPM below which stall-recovery is triggered
 #define MGU_RPM_STOPPED_THRESHOLD   10.0f  // MGU RPM below which MGU is considered stationary
 #define CRANK_TIMEOUT_SEC           30.0f   // Maximum allowed cranking duration at start speed
-#define CRANK_RAMP_SEC              3.0f    // Duration to ramp to start speed
+//#define CRANK_RAMP_SEC              3.0f    // Duration to ramp to start speed
 #define PRE_EXCITE_TIMEOUT_SEC      0.15f   // Maximum allowed time to build rotor flux
 #define STALL_RECOVERY_TIMEOUT      1.5f    // Maximum duration to attempt a flying recovery
 
@@ -79,6 +80,14 @@ static wrsm_super_state_t state_boot_tick(motor_all_state_t *motor, float dt) {
         return WRSM_SUPER_STATE_ALTERNATOR;
     }
     return WRSM_SUPER_STATE_OFF;
+}
+
+static wrsm_super_state_t state_stopping_guard(motor_all_state_t *motor, wrsm_super_state_t from_state) {
+    if (from_state == WRSM_SUPER_STATE_CRANKING) {
+        // Came from cranking event, print the stats.
+        foc_math_print_speed_stats(motor, false);
+    }
+    return WRSM_SUPER_STATE_STOPPING;
 }
 
 // --- STATE: ENGINE_STOPPING (COAST-DOWN TO STANDBY) ---
@@ -158,22 +167,36 @@ static void state_cranking_entry(motor_all_state_t *motor) {
     motor->m_field_override_active = true;
     motor->m_field_override_current = 2.5f;
 
-    float target_erpm = MGU_START_TARGET_RPM * pole_pairs;
+    float target_erpm   = motor->m_conf->wrsm_crank_target_rpm;
+    float ramp_time_sec = motor->m_conf->wrsm_crank_ramp_time;
+    float handoff_erpm  = motor->m_conf->foc_openloop_rpm;
+    float target_iq     = motor->m_conf->wrsm_crank_target_iq;
 
-    // Calculate required acceleration rate (Delta ERPM / Time)
-    float required_ramp_rate = target_erpm / CRANK_RAMP_SEC;
-    // preload speed pid I term
-    motor->m_speed_i_term = 0.40f;
-    // Apply calculated ramp rate dynamically to configuration
-    motor->m_conf->s_pid_ramp_erpms_s = required_ramp_rate;
+    float kp = motor->m_conf->s_pid_kp;
+    float max_current = motor->m_conf->l_current_max;
 
+    // Calculate starting speed offset for target_iq amp target current
+    float speed_error_offset = target_iq / (kp * 0.05f * max_current);
+
+    // Calculate the parallel ramp slope
+    float ramp_slope = (target_erpm - speed_error_offset) / ramp_time_sec;
+    motor->m_conf->s_pid_ramp_erpms_s = ramp_slope;
+
+    // Cleanly configure open-loop driver parameters in RAM
+    motor->m_conf->foc_sl_openloop_time_lock = 0.0f;
+    motor->m_conf->foc_sl_openloop_time_ramp = handoff_erpm / ramp_slope;
+    motor->m_conf->foc_sl_openloop_time      = 0.0f;
+    motor->m_speed_pid_set_rpm               = speed_error_offset;
+
+    // Start the stats
+    foc_math_clear_speed_stats(motor);
     // Command the speed PID loop to execute
     mcpwm_foc_set_pid_speed(target_erpm);
 }
 
 static wrsm_super_state_t state_cranking_tick(motor_all_state_t *motor, float dt) {
     float current_mgu_erpm = fabsf(mcpwm_foc_get_rpm());
-    float started_threshold_erpm = MGU_START_TARGET_RPM * pole_pairs * 1.5f; //120% of start erpm
+    float started_threshold_erpm = motor->m_conf->wrsm_crank_target_rpm; * pole_pairs * 1.5f; //120% of start erpm
 
     if (current_mgu_erpm > started_threshold_erpm) { // Already beyond 120% target_erpm, must be driven by engine.
         return WRSM_SUPER_STATE_ALTERNATOR;
@@ -181,6 +204,14 @@ static wrsm_super_state_t state_cranking_tick(motor_all_state_t *motor, float dt
         return WRSM_SUPER_STATE_STOPPING;
     }
     return WRSM_SUPER_STATE_CRANKING;
+}
+
+static wrsm_super_state_t state_alternator_guard(motor_all_state_t *motor, wrsm_super_state_t from_state) {
+    if (from_state == WRSM_SUPER_STATE_CRANKING) {
+        // Came from cranking event, print the stats.
+        foc_math_print_speed_stats(motor, true);
+    }
+    return WRSM_SUPER_STATE_ALTERNATOR;
 }
 
 // --- STATE: ALTERNATOR_ACTIVE ---
@@ -284,7 +315,7 @@ static const wrsm_super_state_handler_t state_table[] = {
         .on_tick = state_boot_tick
     },
     [WRSM_SUPER_STATE_STOPPING] = {
-        .guard = NULL,
+        .guard = state_stopping_guard,
         .on_entry = state_stopping_entry,
         .on_tick = state_stopping_tick
     },
@@ -299,7 +330,7 @@ static const wrsm_super_state_handler_t state_table[] = {
         .on_tick = state_cranking_tick
     },
     [WRSM_SUPER_STATE_ALTERNATOR] = {
-        .guard = NULL,
+        .guard = state_alternator_guard,
         .on_entry = state_alternator_entry,
         .on_tick = state_alternator_tick
     },

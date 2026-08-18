@@ -360,6 +360,12 @@
 #define FIELD_CURRENT_FAULT_VOLTAGE_MAX       2.20f   // Catches raw sensor rail overvoltage surges
 #define FIELD_CURRENT_FAULT_DEBOUNCE_CYCLES   100     // 5ms filter debounce window
 
+// JAHTODO Add these to the MCCONF struct, default restore, and saving to flash...
+// --- JAH: WRSM Cranking Defaults ---
+//conf->wrsm_crank_target_rpm = 4800.0f;
+//conf->wrsm_crank_ramp_time = 5.0f;
+// HANDOFF ERPM uses MCCONF_FOC_SL_ERPM value.
+//conf->wrsm_crank_target_iq = 100.0f;
 
 // Speed control PID settings
 // needs to work down to zero rpm.
@@ -377,18 +383,33 @@
 #ifdef MCCONF_FOC_SL_OPENLOOP_BOOST_Q
 #undef MCCONF_FOC_SL_OPENLOOP_BOOST_Q
 #endif
-#define MCCONF_FOC_SL_OPENLOOP_BOOST_Q  60.0f
-// ERPM to hand off to sensorless observer.
-#ifdef MCCONF_FOC_SL_ERPM
-#undef MCCONF_FOC_SL_ERPM
-#endif
-#define MCCONF_FOC_SL_ERPM        1000.0f
+#define MCCONF_FOC_SL_OPENLOOP_BOOST_Q  0.0f
 
-// ERPM to start blending with sensorless observer.
-#ifdef MCCONF_FOC_SL_ERPM_START
-#undef MCCONF_FOC_SL_ERPM_START
+// Force Open-Loop Handoff Speed to exactly 1000.0 ERPM
+#ifdef MCCONF_FOC_OPENLOOP_RPM
+#undef MCCONF_FOC_OPENLOOP_RPM
 #endif
-#define MCCONF_FOC_SL_ERPM_START  800.0f
+#define MCCONF_FOC_OPENLOOP_RPM         1000.0f
+
+// Force the open-loop scaling ratio to 1.0. 
+// (This guarantees the handoff target stays locked at exactly 1000 ERPM 
+// instead of letting VESC scale it down under heavy cranking currents!)
+#ifdef MCCONF_FOC_OPENLOOP_RPM_LOW
+#undef MCCONF_FOC_OPENLOOP_RPM_LOW
+#endif
+#define MCCONF_FOC_OPENLOOP_RPM_LOW     1.0f
+
+// FOR USE WITH ENCODER STARTS.. ERPM to hand off to sensorless observer.
+//#ifdef MCCONF_FOC_SL_ERPM
+//#undef MCCONF_FOC_SL_ERPM
+//#endif
+//#define MCCONF_FOC_SL_ERPM        1000.0f
+
+// FOR USE WITH ENCODER STARTS... ERPM to start blending with sensorless observer.
+//#ifdef MCCONF_FOC_SL_ERPM_START
+//#undef MCCONF_FOC_SL_ERPM_START
+//#endif
+//#define MCCONF_FOC_SL_ERPM_START  800.0f
 
 // Open-Loop Ramp Timing
 // Time before we start spinning
@@ -412,7 +433,12 @@
 #ifdef MCCONF_S_PID_KP
 #undef MCCONF_S_PID_KP
 #endif
-#define MCCONF_S_PID_KP                0.03f 
+#define MCCONF_S_PID_KP                0.10f
+// P_term_normalized = Speed_Error * s_pid_kp * (1.0 / 20.0)
+// Iq_set_proportional = P_term_normalized * l_current_max
+// With current limit set to 300.0 A, the equation simplifies to:
+// Iq_set_proportional = Speed_Error * s_pid_kp * 0.05 * 300
+// Iq_set_proportional = Speed_Error * s_pid_kp * 15
 
 #ifdef MCCONF_S_PID_KI
 #undef MCCONF_S_PID_KI

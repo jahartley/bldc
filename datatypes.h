@@ -587,7 +587,12 @@ typedef struct {
 	int si_battery_cells;
 	float si_battery_ah;
 	float si_motor_nl_current;
+	// --- JAH: Field current offset.
 	float m_field_current_offset_v;
+	// --- JAH: Wound Rotor Synchronous Machine Cranking Parameters ---
+    float wrsm_crank_target_rpm;      // Target holding speed (ERPM)
+    float wrsm_crank_ramp_time;       // Total ramp duration from 0 to target (seconds)
+    float wrsm_crank_target_iq;       // Target starting torque current at standstill (A)
 
 	// BMS Configuration
 	bms_config bms;

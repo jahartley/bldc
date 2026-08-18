@@ -21,7 +21,9 @@
 #include "utils_math.h"
 #include "hw.h"
 #include <math.h>
-#include "wrsm_field_controller.h"
+#include "wrsm_field_controller.h" // JAH: field control
+#include "commands.h" // JAH: Required for commands_printf()
+#include <string.h>   // For memset()
 
 // See http://cas.ensmp.fr/~praly/Telechargement/Journaux/2010-IEEE_TPEL-Lee-Hong-Nam-Ortega-Praly-Astolfi.pdf
 void foc_observer_update(float v_alpha, float v_beta, float i_alpha, float i_beta,
@@ -492,6 +494,54 @@ void foc_run_pid_control_pos(bool index_found, float dt, motor_all_state_t *moto
 	}
 }
 
+// --- JAH: High-Fidelity FOC Speed PID Diagnostics ---
+// --- JAH: Sub-Structure for a Single Test Phase ---
+typedef struct {
+    float peak_iq;            // Peak active Iq stator torque current demanded (A)
+    float peak_i_abs;         // Peak absolute physical stator current vector (A)
+    float max_error;          // Maximum speed tracking error (ERPM)
+    float max_p_error;        // Maximum proportional controller error term (Normalized)
+    float peak_i_term;        // Peak integral controller error term (Normalized)
+    float max_duty;           // Peak modulation duty cycle (Normalized)
+    float min_vbus;           // Minimum battery voltage sag observed (V)
+    
+    // Accumulators for Average Calculations
+    float avg_iq_sum;         // Accumulator for average Iq
+    float avg_i_abs_sum;      // Accumulator for average absolute current
+    float avg_speed_sum;      // Accumulator for average speed (ERPM)
+    float avg_error_sum;      // Accumulator for average absolute speed error (ERPM)
+    float avg_p_error_sum;    // Accumulator for average proportional error
+    
+    // Torque, Power & Resistance
+    float peak_torque;        // Peak absolute electromagnetic torque (Nm)
+    float min_torque;         // Minimum electromagnetic torque (Nm)
+    float max_torque;         // Maximum electromagnetic torque (Nm)
+    float avg_torque_sum;     // Accumulator for average torque (Nm)
+    float peak_t_mag;         // Peak absolute magnetic torque (Nm)
+    float peak_t_rel;         // Peak absolute reluctance torque (Nm)
+    float peak_power;         // Peak mechanical power (W)
+    float avg_power_sum;      // Accumulator for average mechanical power (W)
+    float avg_p_elec_sum;     // Accumulator for average electrical input power (W)
+    float peak_r_sys;         // Peak calculated system DC resistance (Ohms)
+    float avg_r_sys_sum;      // Accumulator for system DC resistance (Ohms)
+    uint32_t r_sys_samples;   // Ticks where R_sys was actively calculated
+    
+    uint32_t samples;         // Total loop ticks (duration in ms)
+} phase_stats_t;
+
+// --- JAH: High-Fidelity FOC Speed PID Diagnostics Master ---
+typedef struct {
+    float v_rest;                   // Battery rest voltage prior to cranking (V)
+    phase_stats_t phases[2];        // Array: [0] = Acceleration/Ramp Phase, [1] = Hold RPM Phase
+    float max_erpm_hold;            // Maximum speed observed during hold (ERPM)
+    float min_erpm_hold;            // Minimum speed observed during hold (ERPM)
+    bool is_recording;              // High-speed recording gate flag
+} foc_speed_stats_t;
+
+// Instantiate the static private struct
+static foc_speed_stats_t m_speed_stats = {0};
+
+
 void foc_run_pid_control_speed(bool index_found, float dt, motor_all_state_t *motor) {
 	mc_configuration *conf_now = motor->m_conf;
 	float p_term;
@@ -536,6 +586,11 @@ void foc_run_pid_control_speed(bool index_found, float dt, motor_all_state_t *mo
 		return;
 	}
 
+	// JAH added. Prevent I term wind up under open loop control.
+	if (rpm < conf_now->foc_openloop_rpm) {
+		motor->m_speed_i_term = 0.0;
+	}
+
 	// Compute parameters
 	p_term = error * conf_now->s_pid_kp * (1.0 / 20.0);
 	d_term = (error - motor->m_speed_prev_error) * (conf_now->s_pid_kd / dt) * (1.0 / 20.0);
@@ -571,6 +626,95 @@ void foc_run_pid_control_speed(bool index_found, float dt, motor_all_state_t *mo
 	}
 
 	motor->m_iq_set = output * conf_now->lo_current_max * conf_now->l_current_max_scale;
+
+// --- JAH: High-Fidelity Cycle-by-Cycle Stats Gathering ---
+    if (m_speed_stats.is_recording) {
+        float abs_error   = fabsf(error);
+        float abs_p_error = fabsf(p_term);
+        float abs_i_term  = fabsf(motor->m_speed_i_term);
+        float abs_iq      = fabsf(motor->m_iq_set);
+        float abs_i_abs   = motor->m_motor_state.i_abs;
+        float v_bus       = motor->m_motor_state.v_bus;
+        float duty        = fabsf(motor->m_motor_state.duty_now);
+        float current_rpm = fabsf(mcpwm_foc_get_rpm());
+
+        // 1. Live Torque and Mechanical Power (W)
+        float lambda      = motor->m_injected_flux;
+        float ld_lq_diff  = motor->m_injected_ld_lq_diff;
+        float iq          = motor->m_motor_state.iq;
+        float id          = motor->m_motor_state.id;
+        float p           = (float)conf_now->foc_no_poles / 2.0f;
+
+        float t_mag       = 1.5f * p * lambda * iq;
+        float t_rel       = -1.5f * p * ld_lq_diff * id * iq;
+        float t_total     = t_mag + t_rel;
+
+        float w_mech      = motor->m_pll_speed / p;
+        float power_mech  = t_total * w_mech;                 // Mechanical Output Power
+
+        // 2. Live Electrical Input Power (W)
+        float i_batt      = motor->m_motor_state.i_in;        // DC battery current
+        float power_elec  = v_bus * i_batt;                   // Electrical Input Power
+
+        // 3. Live DC System Resistance Calculation (R_sys)
+        float r_sys_live = 0.0f;
+        bool r_sys_valid = false;
+        if (i_batt > 15.0f && v_bus < (m_speed_stats.v_rest - 0.1f)) {
+            r_sys_live = (m_speed_stats.v_rest - v_bus) / i_batt;
+            if (r_sys_live > 0.001f && r_sys_live < 0.200f) {
+                r_sys_valid = true;
+            }
+        }
+
+        // 4. Resolve Active Phase Index: [0] = Accel/Ramp, [1] = Hold RPM
+        bool is_holding = (fabsf(motor->m_speed_pid_set_rpm - motor->m_speed_command_rpm) < 1.0f);
+        int idx = is_holding ? 1 : 0;
+        phase_stats_t *s = &m_speed_stats.phases[idx];
+
+        // Execute Single-Pass Diagnostics Update
+        if (abs_iq > s->peak_iq) s->peak_iq = abs_iq;
+        if (abs_i_abs > s->peak_i_abs) s->peak_i_abs = abs_i_abs;
+        if (abs_error > s->max_error) s->max_error = abs_error;
+        if (abs_p_error > s->max_p_error) s->max_p_error = abs_p_error;
+        if (abs_i_term > s->peak_i_term) s->peak_i_term = abs_i_term;
+        if (duty > s->max_duty) s->max_duty = duty;
+        if (v_bus < s->min_vbus) s->min_vbus = v_bus;
+        
+        // Torque, Power & Resistance Calculations
+        float abs_torque = fabsf(t_total);
+        if (abs_torque > s->peak_torque) s->peak_torque = abs_torque;
+        if (t_total < s->min_torque) s->min_torque = t_total;
+        if (t_total > s->max_torque) s->max_torque = t_total;
+        if (fabsf(t_mag) > s->peak_t_mag) s->peak_t_mag = fabsf(t_mag);
+        if (fabsf(t_rel) > s->peak_t_rel) s->peak_t_rel = fabsf(t_rel);
+        if (fabsf(power_mech) > s->peak_power) s->peak_power = fabsf(power_mech);
+        
+        // Accumulate Sums
+        s->avg_iq_sum += abs_iq;
+        s->avg_i_abs_sum += abs_i_abs;
+        s->avg_torque_sum += t_total;
+        s->avg_power_sum += power_mech;
+        s->avg_p_elec_sum += power_elec;
+        
+        // --- JAH: Add New Averages ---
+        s->avg_speed_sum += current_rpm;
+        s->avg_error_sum += abs_error;
+        s->avg_p_error_sum += abs_p_error;
+        
+        s->samples++;
+
+        if (r_sys_valid) {
+            if (r_sys_live > s->peak_r_sys) s->peak_r_sys = r_sys_live;
+            s->avg_r_sys_sum += r_sys_live;
+            s->r_sys_samples++;
+        }
+
+        // Special Hold-Phase-Only Speed Ripple Tracking
+        if (is_holding) {
+            if (current_rpm > m_speed_stats.max_erpm_hold) m_speed_stats.max_erpm_hold = current_rpm;
+            if (current_rpm < m_speed_stats.min_erpm_hold) m_speed_stats.min_erpm_hold = current_rpm;
+        }
+    }
 }
 
 float foc_correct_encoder(float obs_angle, float enc_angle, float speed,
@@ -797,4 +941,130 @@ void foc_precalc_values(motor_all_state_t *motor) {
 	motor->p_fs = conf_now->foc_f_zv * 0.5;
 #endif
 	motor->p_dt = 1.0 / motor->p_fs;
+}
+
+
+// --- JAH: Diagnostics API Implementation ---
+void foc_math_clear_speed_stats(motor_all_state_t *motor) {
+    memset(&m_speed_stats, 0, sizeof(m_speed_stats));
+    
+    // Capture open-circuit battery voltage before loading shunts
+    m_speed_stats.v_rest = motor->m_motor_state.v_bus;
+    
+    // Pre-initialize limits
+    m_speed_stats.min_vbus_accel = motor->m_motor_state.v_bus;
+    m_speed_stats.min_vbus_hold = motor->m_motor_state.v_bus;
+    m_speed_stats.min_erpm_hold = 999999.0f;
+    m_speed_stats.max_erpm_hold = -999999.0f;
+    
+    for (int i = 0; i < 2; i++) {
+        m_speed_stats.phases[i].min_vbus = motor->m_motor_state.v_bus;
+        m_speed_stats.phases[i].min_torque = 9999.0f;
+        m_speed_stats.phases[i].max_torque = -9999.0f;
+    }
+    
+    m_speed_stats.is_recording = true; // Open the high-speed recording gate
+}
+
+void foc_math_print_speed_stats(motor_all_state_t *motor, bool success) {
+    m_speed_stats.is_recording = false; // Disable recording instantly
+
+    phase_stats_t *accel = &m_speed_stats.phases[0];
+    phase_stats_t *hold  = &m_speed_stats.phases[1];
+
+    // 1. Process Acceleration Phase math
+    float avg_iq_accel     = (accel->samples > 0) ? (accel->avg_iq_sum / accel->samples) : 0.0f;
+    float avg_i_abs_accel  = (accel->samples > 0) ? (accel->avg_i_abs_sum / accel->samples) : 0.0f;
+    float avg_torque_accel = (accel->samples > 0) ? (accel->avg_torque_sum / accel->samples) : 0.0f;
+    float avg_power_accel  = (accel->samples > 0) ? (accel->avg_power_sum / accel->samples) : 0.0f;
+    float avg_p_elec_accel = (accel->samples > 0) ? (accel->avg_p_elec_sum / accel->samples) : 0.0f;
+    float duration_accel   = accel->samples * 0.001f;
+
+    float avg_r_sys_accel  = (accel->r_sys_samples > 0) ? (accel->avg_r_sys_sum / accel->r_sys_samples) : 0.0f;
+    float eff_accel        = (avg_p_elec_accel > 1.0f) ? (avg_power_accel / avg_p_elec_accel) * 100.0f : 0.0f;
+
+    // Averages requested by JAH
+    float avg_speed_accel  = (accel->samples > 0) ? (accel->avg_speed_sum / accel->samples) : 0.0f;
+    float avg_err_accel    = (accel->samples > 0) ? (accel->avg_error_sum / accel->samples) : 0.0f;
+    float avg_p_err_accel  = (accel->samples > 0) ? (accel->avg_p_error_sum / accel->samples) : 0.0f;
+
+    // 2. Process Hold Phase math
+    float avg_iq_hold      = (hold->samples > 0) ? (hold->avg_iq_sum / hold->samples) : 0.0f;
+    float avg_i_abs_hold   = (hold->samples > 0) ? (hold->avg_i_abs_sum / hold->samples) : 0.0f;
+    float avg_torque_hold  = (hold->samples > 0) ? (hold->avg_torque_sum / hold->samples) : 0.0f;
+    float avg_power_hold   = (hold->samples > 0) ? (hold->avg_power_sum / hold->samples) : 0.0f;
+    float avg_p_elec_hold  = (hold->samples > 0) ? (hold->avg_p_elec_sum / hold->samples) : 0.0f;
+    float duration_hold    = hold->samples * 0.001f;
+
+    float avg_r_sys_hold   = (hold->r_sys_samples > 0) ? (hold->avg_r_sys_sum / hold->r_sys_samples) : 0.0f;
+    float eff_hold         = (avg_p_elec_hold > 1.0f) ? (avg_power_hold / avg_p_elec_hold) * 100.0f : 0.0f;
+
+    // Averages requested by JAH
+    float avg_speed_hold   = (hold->samples > 0) ? (hold->avg_speed_sum / hold->samples) : 0.0f;
+    float avg_err_hold     = (hold->samples > 0) ? (hold->avg_error_sum / hold->samples) : 0.0f;
+    float avg_p_err_hold   = (hold->samples > 0) ? (hold->avg_p_error_sum / hold->samples) : 0.0f;
+
+    // 3. Process Speed Ripple math
+    float speed_ripple = 0.0f;
+    if (hold->samples > 0 && m_speed_stats.min_erpm_hold < 900000.0f) {
+        speed_ripple = m_speed_stats.max_erpm_hold - m_speed_stats.min_erpm_hold;
+    }
+
+    commands_printf("\n=============================================================");
+    commands_printf("=== WRSM POWER & RESISTANCE STARTER DIAGNOSTICS ===");
+    commands_printf("=============================================================");
+    commands_printf("Crank Status       : %s", success ? "SUCCESS (Engine Started)" : "TIMEOUT / FAILURE");
+    commands_printf("Total Crank Time   : %.3f s (Ramp: %.3f s, Hold: %.3f s)", 
+                    (double)(duration_accel + duration_hold), (double)duration_accel, (double)duration_hold);
+    
+    commands_printf("\n--- ACCELERATION / RAMP PHASE STATS ---");
+    commands_printf("  Speed Error      : Max: %.1f ERPM (Avg: %.1f ERPM)", (double)accel->max_error, (double)avg_err_accel);
+    commands_printf("  P-Term Error     : Max: %.3f      (Avg: %.3f)      # (Limit: 1.0)", (double)accel->max_p_error, (double)avg_p_err_accel);
+    commands_printf("  Peak I-Term Output: %.3f (Normalized Limit: 1.0)", (double)accel->peak_i_term);
+    commands_printf("  Max Duty Cycle   : %.1f %%", (double)(accel->max_duty * 100.0f));
+    commands_printf("  Average Speed    : %.1f ERPM", (double)avg_speed_accel);
+    commands_printf("  Stator Iq Current: Peak: %.1f A   (Avg: %.1f A)", (double)accel->peak_iq, (double)avg_iq_accel);
+    commands_printf("  Total Current    : Peak: %.1f A   (Avg: %.1f A)", (double)accel->peak_i_abs, (double)avg_i_abs_accel);
+    commands_printf("  Min Batt Voltage : %.2f V (Sag: -%.2f V)", (double)accel->min_vbus, 
+                    (double)(m_speed_stats.v_rest - accel->min_vbus));
+    commands_printf("  --- System Resistance & Losses ---");
+    commands_printf("  Peak R_sys       : %.1f mOhm", (double)(accel->peak_r_sys * 1000.0f));
+    commands_printf("  Avg R_sys        : %.1f mOhm  # (>20 mOhm warns of cabling bottlenecks!)", (double)(avg_r_sys_accel * 1000.0f));
+    commands_printf("  Avg Elec In Power: %.1f W (%.2f kW)", (double)avg_p_elec_accel, (double)(avg_p_elec_accel / 1000.0f));
+    commands_printf("  Avg Mech Out Pow : %.1f W (%.2f kW)", (double)avg_power_accel, (double)(avg_power_accel / 1000.0f));
+    commands_printf("  System Efficiency: %.1f %%", (double)eff_accel);
+
+    commands_printf("\n--- HOLD RPM / STEADY STATE STATS ---");
+    commands_printf("  Speed Error      : Max: %.1f ERPM (Avg: %.1f ERPM)", (double)hold->max_error, (double)avg_err_hold);
+    commands_printf("  P-Term Error     : Max: %.3f      (Avg: %.3f)", (double)hold->max_p_error, (double)avg_p_err_hold);
+    commands_printf("  Peak I-Term Output: %.3f", (double)hold->peak_i_term);
+    commands_printf("  Max Duty Cycle   : %.1f %%", (double)(hold->max_duty * 100.0f));
+    commands_printf("  Average Speed    : %.1f ERPM  # (Target: %.1f ERPM)", (double)avg_speed_hold, (double)motor->m_speed_command_rpm);
+    commands_printf("  Stator Iq Current: Peak: %.1f A   (Avg: %.1f A)", (double)hold->peak_iq, (double)avg_iq_hold);
+    commands_printf("  Min Batt Voltage : %.2f V (Sag: -%.2f V)", (double)hold->min_vbus, 
+                    (double)(m_speed_stats.v_rest - hold->min_vbus));
+    commands_printf("  Peak-Peak Ripple : %.1f ERPM (Min: %.1f, Max: %.1f)", 
+                    (double)speed_ripple, (double)m_speed_stats.min_erpm_hold, (double)m_speed_stats.max_erpm_hold);
+    commands_printf("  --- System Resistance & Losses ---");
+    commands_printf("  Avg R_sys        : %.1f mOhm", (double)(avg_r_sys_hold * 1000.0f));
+    commands_printf("  Avg Elec In Power: %.1f W (%.2f kW)", (double)avg_p_elec_hold, (double)(avg_p_elec_hold / 1000.0f));
+    commands_printf("  Avg Mech Out Pow : %.1f W (%.2f kW)", (double)avg_power_hold, (double)(avg_power_hold / 1000.0f));
+    commands_printf("  System Efficiency: %.1f %%", (double)eff_hold);
+    commands_printf("  --- Dynamic Torque & Power ---");
+    commands_printf("  Peak Torque      : %.2f Nm (Magnetic: %.2f Nm, Reluctance: %.2f Nm)", 
+                    (double)hold->peak_torque, (double)hold->peak_t_mag, (double)hold->peak_t_rel);
+    commands_printf("  Min/Max Torque   : %.2f Nm / %.2f Nm", (double)hold->min_torque, (double)hold->max_torque);
+    commands_printf("  Avg Torque       : %.2f Nm", (double)avg_torque_hold);
+    commands_printf("  Peak Mech Power  : %.1f W", (double)hold->peak_power);
+    commands_printf("  Avg Mech Power   : %.1f W", (double)avg_power_hold);
+
+    // Mechanical alerts
+    if (hold->samples > 500) {
+        if (speed_ripple < 40.0f && avg_iq_hold > 120.0f) {
+            commands_printf("\n[ALERT: Potential Belt Slip Detected! Low speed ripple with high current demand]");
+        } else if (speed_ripple > 350.0f) {
+            commands_printf("\n[ALERT: Excessive Speed Ripple! Lower s_pid_ki or check mechanical mounts]");
+        }
+    }
+    commands_printf("=============================================================\n");
 }
