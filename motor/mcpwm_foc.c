@@ -806,11 +806,48 @@ void mcpwm_foc_set_pid_speed(float rpm) {
 	if (motor->m_conf->s_pid_ramp_erpms_s > 0.0 ) {
 		if (motor->m_control_mode != CONTROL_MODE_SPEED ||
 				motor->m_state != MC_STATE_RUNNING) {
+			// Command speed target at the split-second of handoff (5% over open-loop ceiling)
+            float rpm_handoff_target = motor->m_conf->foc_openloop_rpm * 1.05f;
+			if (rpm > 0.0f && rpm_handoff_target > 0.0f) { //positive direction?
+				// --- JAH: Open loop to sensorless ramp coordination ---
+				// Only perform trajectory calculations if starting from a complete stop.
+				// if m_state != MC_STATE_RUNNING then rpm should be zero.
+				float old_ramp_erpms_s = motor->m_conf->s_pid_ramp_erpms_s;
+				float t_target = rpm / old_ramp_erpms_s;
+				// Sum up total open-loop sequence time to handoff point
+				float t_align   = motor->m_conf->foc_sl_openloop_hyst;
+				float t_lock    = motor->m_conf->foc_sl_openloop_time_lock;
+				float t_ramp    = motor->m_conf->foc_sl_openloop_time_ramp;
+				float t_const   = motor->m_conf->foc_sl_openloop_time;
+				float t_handoff = t_align + t_lock + t_ramp + t_const;
+
+				// Rpm at t_handoff pid would use, if rpm_handoff_calc < rpm_handoff_target then the motor stalls.
+				float rpm_handoff_calc = old_ramp_erpms_s * t_handoff;
+				// Verify that target space is physically larger than our open-loop window
+				if (t_target > t_handoff && rpm > rpm_handoff_target && rpm_handoff_target > rpm_handoff_calc) {
+					// 4. Calculate the morphed slope connecting Point (t_handoff, rpm_handoff_target) to (t_target, rpm)
+					float S_new = (rpm - rpm_handoff_target) / (t_target - t_handoff);
+					
+					// 5. Project backward to t=0 to find starting RPM
+					float rpm_start_new = rpm_handoff_target - (S_new * t_handoff);
+					
+					// 6. Apply trajectory if starting RPM is non-negative
+					if (rpm_start_new >= 0.0f) {
+						//this is the rpm the pid ticks up from by slope amount to m_speed_command_rpm, has no effect until after open loop ends at t_handoff
+						motor->m_speed_pid_set_rpm = rpm_start_new; 
+						motor->m_conf->s_pid_ramp_erpms_s = S_new;
+					}
+				}
+			} else { // Negative pid/openloop direction?
+				// Dont think I need this...
+				motor->m_speed_pid_set_rpm = 0.0f
+			}
+		} else { // motor already running. use ramp rate to get to target rpm.
 			motor->m_speed_pid_set_rpm = mcpwm_foc_get_rpm();
 		}
 
 		motor->m_speed_command_rpm = rpm;
-	} else {
+	} else { //no ramp rate set. go directly to target rpm
 		motor->m_speed_pid_set_rpm = rpm;
 	}
 
