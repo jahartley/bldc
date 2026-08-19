@@ -22,6 +22,37 @@ typedef enum {
     WRSM_SUPER_STATE_ESTOP          // Terminal latching hardware emergency stop (requires power cycle)
 } wrsm_super_state_t;
 
+// Web logging telemetry data pack
+#pragma pack(push, 1)
+typedef struct {
+    uint8_t start_marker;     // 0xAA - Fixed alignment byte for browser synchronization
+    uint8_t super_state;      // WRSM Supervisor State ID (Enum)
+    uint8_t mc_state;         // VESC Motor State (Enum)
+    uint8_t ctrl_mode;        // FOC Active Control Mode (Enum)
+    float   rpm;              // Decimated: Instantaneous Speed (ERPM)
+    float   accel_avg;        // Double-EMA: Smoothed Acceleration (ERPM/s)
+    float   accel_mad;        // Double-EMA: Torsional Crankshaft Vibration Width
+    float   iq_avg;           // Double-EMA: Stator Torque-producing Current (A)
+    float   iq_mad;           // Double-EMA: Stator Current Noise/Hunting Tracker (A)
+    float   iq_target;        // Double-EMA: Demanded Torque Current Target (A)
+    float   id_avg;           // Double-EMA: Stator Demagnetizing Current (A)
+    float   id_min;           // Block-Min: Peak Stator Demagnetizing Current in 20ms block
+    float   id_max;           // Block-Max: Peak Magnetizing Current in 20ms block
+    float   if_avg;           // Double-EMA: Measured Winding Excitation Current (A)
+    float   if_mad;           // Double-EMA: Rotor Current Ripple / PI Loop Hunting (A)
+    float   field_pwm_avg;    // Double-EMA: Rotor H-Bridge Duty Cycle Applied (0.0 to 1.0)
+    float   field_pwm_mad;    // Double-EMA: Rotor H-Bridge Duty Cycle Chatter Width
+    float   vbus_avg;         // Double-EMA: Battery Bus Voltage (V)
+    float   vbus_min;         // Block-Min: Battery Cranking Voltage Sag (V)
+    float   vbus_max;         // Block-Max: Alternator Load-Dump Spike Tracker (V)
+    float   duty_avg;         // Double-EMA: Stator Inverter Duty Cycle Average (0.0 to 1.0)
+    float   duty_max;         // Block-Max: Inverter Voltage-Saturation/Clipping Tracker (0.0 to 1.0)
+    float   if_min;           // Block-Min: REPLACED lambda_min -> Peak Negative Rotor Current Sag
+    float   stator_fw_id;     // Double-EMA: Stator-assisted Field Weakening Target (A)
+    uint8_t checksum;         // XOR checksum of all previous 84 bytes
+} wrsm_telemetry_packet_t;
+#pragma pack(pop)
+
 // ============================================================================
 // --- CORE SUPERVISOR API ---
 // ============================================================================
@@ -74,5 +105,9 @@ wrsm_super_state_t wrsm_supervisor_get_state(void);
  * @return A constant null-terminated string representing the state name.
  */
 const char* wrsm_supervisor_state_to_str(wrsm_super_state_t state);
+
+// JAH: WRSM 50Hz Binary Telemetry Control APIs
+void wrsm_supervisor_set_telemetry_enabled(bool enabled);
+bool wrsm_supervisor_get_telemetry_enabled(void);
 
 #endif /* WRSM_SUPERVISOR_H_ */

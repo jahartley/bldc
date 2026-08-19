@@ -1122,7 +1122,7 @@ void terminal_process_string(char *str) {
                 else if (strcmp(argv[1], "stall_kp") == 0)           mcconf->wrsm_stall_catch_kp = val;
                 else if (strcmp(argv[1], "stall_ki") == 0)           mcconf->wrsm_stall_catch_ki = val;
                 else if (strcmp(argv[1], "stall_decel") == 0)        mcconf->wrsm_stall_decel_trigger = val;
-                else if (strcmp(argv, "accel_filter_coef") == 0)     mcconf->wrsm_accel_filter_coef = val;
+                else if (strcmp(argv[1], "accel_filter_coef") == 0)  mcconf->wrsm_accel_filter_coef = val;
                 else {
                     matched = false;
                     commands_printf("Error: Unknown parameter name: %s", argv[1]);
@@ -1151,6 +1151,24 @@ void terminal_process_string(char *str) {
             commands_printf("WRSM Configuration successfully saved to physical Flash!\r\n");
         } else {
             commands_printf("Error: Flash write lock failed!\r\n");
+        }
+    } else if (strcmp(argv, "wrsm_stream") == 0) {
+        if (argc == 2) {
+            if (strcmp(argv[8], "on") == 0) {
+                wrsm_supervisor_set_telemetry_enabled(true);
+                commands_printf("WRSM Binary Telemetry stream: ENABLED (50Hz Binary mode active)\r\n");
+            } 
+            else if (strcmp(argv[8], "off") == 0) {
+                wrsm_supervisor_set_telemetry_enabled(false);
+                commands_printf("WRSM Binary Telemetry stream: DISABLED\r\n");
+            } 
+            else {
+                commands_printf("Error: Invalid argument. Use 'on' or 'off'\r\n");
+            }
+        } else {
+            commands_printf("Telemetry Stream Status: %s\r\n", 
+                            wrsm_supervisor_get_telemetry_enabled() ? "ENABLED" : "DISABLED");
+            commands_printf("Usage: wrsm_stream [on | off]\r\n");
         }
     } else if (strcmp(argv[0], "conf_default") == 0) {
 		mc_configuration *mcconf = mempools_alloc_mcconf();
@@ -1485,6 +1503,8 @@ void terminal_process_string(char *str) {
         commands_printf("  Modifies a WRSM parameter in RAM immediately");
         commands_printf("wrsm_save");
         commands_printf("  Permanently writes running RAM configuration to Flash");
+		commands_printf("wrsm_stream [on | off]");
+		commands_printf("  Enables high-fidelity 50Hz raw binary data stream over USB/UART");
 		commands_printf("conf_default");
         commands_printf("  loads and saves the complete default configuration, overwriting the current ram config, and saves to flash.");
 

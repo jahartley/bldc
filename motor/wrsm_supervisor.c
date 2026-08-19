@@ -194,7 +194,7 @@ static void state_cranking_entry(motor_all_state_t *motor) {
 
 static wrsm_super_state_t state_cranking_tick(motor_all_state_t *motor, float dt) {
     float current_mgu_erpm = fabsf(mcpwm_foc_get_rpm());
-    float started_threshold_erpm = motor->m_conf->wrsm_crank_target_rpm; * POLE_PAIRS * 1.5f; //120% of start erpm
+    float started_threshold_erpm = motor->m_conf->wrsm_crank_target_rpm * 1.5f; //1%0% of start erpm
 
     if (current_mgu_erpm > started_threshold_erpm) { // Already beyond 120% target_erpm, must be driven by engine.
         return WRSM_SUPER_STATE_ALTERNATOR;
@@ -456,6 +456,19 @@ void wrsm_supervisor_init(motor_all_state_t *motor) {
     state_timer = 0.0f;
 }
 
+// ============================================================================
+// JAH: Isolated Volatile Telemetry Flags & APIs
+// ============================================================================
+static volatile bool m_telemetry_enabled = false;
+
+void wrsm_supervisor_set_telemetry_enabled(bool enabled) {
+    m_telemetry_enabled = enabled;
+}
+
+bool wrsm_supervisor_get_telemetry_enabled(void) {
+    return m_telemetry_enabled;
+}
+
 void wrsm_supervisor_update(motor_all_state_t *motor, float dt) {
     m_active_motor = motor;
     state_timer += dt;
@@ -471,6 +484,136 @@ void wrsm_supervisor_update(motor_all_state_t *motor, float dt) {
     // Apply native exponential low-pass filter
     float filter_coef = motor->m_conf->wrsm_accel_filter_coef;
     UTILS_LP_FAST(motor->m_accel_filtered, raw_accel, filter_coef);
+
+    // ============================================================================
+    // JAH: Web Serial Diagnostic Telemetry (1 kHz Execution)
+    // ============================================================================
+    
+    // Persistent EMA variables (Zero memory footprint, zero arrays)
+    static float accel_avg = 0.0f;
+    static float accel_mad = 0.0f;
+    static float iq_avg = 0.0f;
+    static float iq_mad = 0.0f;
+    static float iq_target_avg = 0.0f;
+    static float id_avg = 0.0f;
+    static float if_avg = 0.0f;
+    static float if_mad = 0.0f;
+    static float fpwm_avg = 0.0f;
+    static float fpwm_mad = 0.0f;
+    static float vbus_avg = 0.0f;
+    static float duty_avg = 0.0f;
+    static float stator_fw_avg = 0.0f;
+
+    // Block Transient Detectors (Reset every 20ms telemetry window)
+    static float id_min = 999.0f;
+    static float id_max = -999.0f;
+    static float vbus_min = 999.0f;
+    static float vbus_max = -999.0f;
+    static float duty_max = -999.0f;
+    static float if_min = 999.0f;
+    
+    static int telemetry_divider = 0;
+
+    // 1. Fetch live raw high-speed variables from physical FOC registers
+    float raw_rpm   = mcpwm_foc_get_rpm();
+    float raw_iq    = mcpwm_foc_get_iq();
+    float raw_iq_tgt= mcpwm_foc_get_iq_set();
+    float raw_id    = mcpwm_foc_get_id();
+    float raw_if    = motor->m_field_current;
+    float raw_fpwm  = motor->m_field_duty;
+    float raw_vbus  = motor->m_motor_state.v_bus;
+    float raw_duty  = mcpwm_foc_get_duty_cycle_now();
+    float raw_sfw   = motor->m_i_fw_set;
+
+    // Continuous Double-EMA Filters (alpha = 0.10f rough equivalent to a 10ms-15ms time-constant)
+    const float alpha = 0.10f;
+    
+    // Speed Derivatives & Vibrations
+    accel_avg  += alpha * (motor->m_accel - accel_avg);
+    accel_mad  += alpha * (fabsf(motor->m_accel - accel_avg) - accel_mad);
+
+    // Stator Torque Currents
+    iq_avg     += alpha * (raw_iq - iq_avg);
+    iq_mad     += alpha * (fabsf(raw_iq - iq_avg) - iq_mad);
+    iq_target_avg += alpha * (raw_iq_tgt - iq_target_avg);
+
+    // Magnetizing & Rotor Excitation
+    id_avg     += alpha * (raw_id - id_avg);
+    if_avg     += alpha * (raw_if - if_avg);
+    if_mad     += alpha * (fabsf(raw_if - if_avg) - if_mad);
+
+    // Field H-Bridge Duty Cycle Chatter
+    fpwm_avg   += alpha * (raw_fpwm - fpwm_avg);
+    fpwm_mad   += alpha * (fabsf(raw_fpwm - fpwm_avg) - fpwm_mad);
+
+    // Voltage & Saturation Limits
+    vbus_avg   += alpha * (raw_vbus - vbus_avg);
+    duty_avg   += alpha * (raw_duty - duty_avg);
+    stator_fw_avg += alpha * (raw_sfw - stator_fw_avg);
+
+    // 3. Update Block-Level Transient Peak Catchers
+    if (raw_id > id_max)     id_max = raw_id;
+    if (raw_id < id_min)     id_min = raw_id;
+    if (raw_vbus > vbus_max) vbus_max = raw_vbus;
+    if (raw_vbus < vbus_min) vbus_min = raw_vbus;
+    if (raw_duty > duty_max) duty_max = raw_duty;
+    if (raw_if < if_min)     if_min = raw_if;
+
+    // 4. Downsample Transmission Rate to 50 Hz (Executes every 20ms)
+    telemetry_divider++;
+    if (telemetry_divider >= 20) {
+        telemetry_divider = 0;
+
+        if (m_telemetry_enabled) {
+            // Instantiate and pack our telemetry packet struct
+            wrsm_telemetry_packet_t packet;
+            packet.start_marker  = 0xAA;
+            packet.super_state   = (uint8_t)current_state;
+            packet.mc_state      = (uint8_t)motor->m_state;
+            packet.ctrl_mode     = (uint8_t)motor->m_control_mode;
+            packet.rpm           = raw_rpm;
+            packet.accel_avg     = accel_avg;
+            packet.accel_mad     = accel_mad;
+            packet.iq_avg        = iq_avg;
+            packet.iq_mad        = iq_mad;
+            packet.iq_target     = iq_target_avg;
+            packet.id_avg        = id_avg;
+            packet.id_min        = id_min;
+            packet.id_max        = id_max;
+            packet.if_avg        = if_avg;
+            packet.if_mad        = if_mad;
+            packet.field_pwm_avg = fpwm_avg;
+            packet.field_pwm_mad = fpwm_mad;
+            packet.vbus_avg      = vbus_avg;
+            packet.vbus_min      = vbus_min;
+            packet.vbus_max      = vbus_max;
+            packet.duty_avg      = duty_avg;
+            packet.duty_max      = duty_max;
+            packet.if_min        = if_min;
+            packet.stator_fw_id  = stator_fw_avg;
+
+            // Generate the XOR Packet Checksum
+            uint8_t calc_checksum = 0;
+            uint8_t *packet_bytes = (uint8_t*)&packet;
+            for (int i = 0; i < sizeof(wrsm_telemetry_packet_t) - 1; i++) {
+                calc_checksum ^= packet_bytes[i];
+            }
+            packet.checksum = calc_checksum;
+
+            // Null-Byte Safe Character Stream Output
+            for (int i = 0; i < sizeof(wrsm_telemetry_packet_t); i++) {
+                commands_printf("%c", packet_bytes[i]);
+            }
+        }
+
+        // 5. Reset the Peak Catchers for the next 20ms block
+        id_min   = 999.0f;
+        id_max   = -999.0f;
+        vbus_min = 999.0f;
+        vbus_max = -999.0f;
+        duty_max = -999.0f;
+        if_min   = 999.0f;
+    }
 
     // --- GLOBAL SAFETY TRANSITION INTERLOCKS ---
     // 1. Terminal Hardware ESTOP Check (Absolute dead-end)
