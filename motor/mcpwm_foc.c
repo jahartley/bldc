@@ -21,7 +21,7 @@
 	Implement control for automotive WRSM belt starter alternator.
 
 	******** TODO REMINDER!
-	SEARCH FOR JAHTODOFIXME to find the TODOs
+	SEARCH FOR JAHTODO FIXME to find the TODOs
 	********
 */
 
@@ -688,6 +688,11 @@ bool mcpwm_foc_init_done(void) {
 }
 
 void mcpwm_foc_set_configuration(mc_configuration *configuration) {
+	// ============================================================================
+    // JAH: RAM Intercept hook. Forces incoming config to have safe initialized defaults.
+    // ============================================================================
+    conf_general_bootstrap_wrsm_defaults(configuration);
+
 	get_motor_now()->m_conf = configuration;
 	foc_precalc_values((motor_all_state_t*)get_motor_now());
 

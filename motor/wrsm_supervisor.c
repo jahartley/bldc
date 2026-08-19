@@ -34,8 +34,6 @@ static motor_all_state_t *m_active_motor = NULL;
 static wrsm_super_state_t current_state = WRSM_SUPER_STATE_BOOT;   // The actual active state
 static wrsm_super_state_t requested_state = WRSM_SUPER_STATE_BOOT; // The mailbox target
 
-static float pole_pairs = 8.0f;
-
 // ============================================================================
 // --- STATE-SPECIFIC HANDLERS ---
 // ============================================================================
@@ -51,7 +49,7 @@ static void state_off_entry(motor_all_state_t *motor) {
 static wrsm_super_state_t state_off_tick(motor_all_state_t *motor, float dt) {
     // Standby: Wait for external transition request or check motor spin.
     float current_erpm = fabsf(mcpwm_foc_get_rpm());
-    float erpm_threshold = MGU_RPM_STOPPED_THRESHOLD * pole_pairs;
+    float erpm_threshold = MGU_RPM_STOPPED_THRESHOLD * POLE_PAIRS;
     
     // automatic move to alternator mode prevents letting stator current flow 
     // through body diodes due to spin + base flux.
@@ -73,7 +71,7 @@ static wrsm_super_state_t state_boot_tick(motor_all_state_t *motor, float dt) {
     wrsm_set_field_enable(motor, true); // no specific reason this should be off.
     float current_erpm = fabsf(mcpwm_foc_get_rpm());
         
-    float erpm_threshold = MGU_RPM_STOPPED_THRESHOLD * pole_pairs;
+    float erpm_threshold = MGU_RPM_STOPPED_THRESHOLD * POLE_PAIRS;
     // transition off boot after first pass through boot tick
     if (current_erpm > erpm_threshold) {
         motor->m_field_override_active = false; // let automatic field control run.
@@ -130,7 +128,7 @@ static wrsm_super_state_t state_pre_excite_guard(motor_all_state_t *motor, wrsm_
     }
     // RPM Guard: Prevent entering PRE_EXCITE if the MGU is already spinning
     float current_erpm = fabsf(mcpwm_foc_get_rpm());
-    float erpm_threshold = MGU_RPM_STOPPED_THRESHOLD * pole_pairs;
+    float erpm_threshold = MGU_RPM_STOPPED_THRESHOLD * POLE_PAIRS;
     
     if (current_erpm > erpm_threshold) {
         return WRSM_SUPER_STATE_FAULT;        
@@ -196,7 +194,7 @@ static void state_cranking_entry(motor_all_state_t *motor) {
 
 static wrsm_super_state_t state_cranking_tick(motor_all_state_t *motor, float dt) {
     float current_mgu_erpm = fabsf(mcpwm_foc_get_rpm());
-    float started_threshold_erpm = motor->m_conf->wrsm_crank_target_rpm; * pole_pairs * 1.5f; //120% of start erpm
+    float started_threshold_erpm = motor->m_conf->wrsm_crank_target_rpm; * POLE_PAIRS * 1.5f; //120% of start erpm
 
     if (current_mgu_erpm > started_threshold_erpm) { // Already beyond 120% target_erpm, must be driven by engine.
         return WRSM_SUPER_STATE_ALTERNATOR;
@@ -225,6 +223,38 @@ static wrsm_super_state_t state_alternator_tick(motor_all_state_t *motor, float 
         //return WRSM_SUPER_STATE_FAULT;
         return WRSM_SUPER_STATE_OFF;
     }
+
+    /*
+     * JAH FUTURE ROADMAP: ALTERNATOR CHARGING REGULATION & STALL DETECTION
+     *
+     * 1. Dual-Mode Charging Loop:
+     *    - Primary Mode (CAN-Bus Directed):
+     *      Regulate output stator current (Iq) using target charging voltages 
+     *      broadcasted by the STM32 BMS over CAN. Override and throttle Iq 
+     *      instantly if the BMS reports battery charging current exceeds limits.
+     *    - Monitor CAN-Bus for additional parameters for performance gain, i.e.
+     *      set charging current to a low/zero value on WOT request, possibly with
+     *      additional charge current under braking to make up for the missing charge.
+     *    - Backup Mode (Local Fallback):
+     *      Run a local down-counter millisecond timer. If no CAN-bus packet 
+     *      is received from the BMS within the timeout window (e.g., 250ms), 
+     *      seamlessly fall back to local voltage regulation using local V_batt 
+     *      against 'wrsm_alt_target_voltage'. Ramping logic should prevent 
+     *      sudden current steps during fall-back/recovery.
+     *
+     * 2. Stall-Catch Detection via Acceleration (d_speed/dt):
+     *      Rather than waiting for absolute speed to sag below critical limits 
+     *      (a lagging indicator), monitor the filtered first derivative of speed 
+     *      ('motor->m_speed_deriv_filtered'). If MGU RPM is below the idle threshold 
+     *      AND deceleration exceeds 'wrsm_stall_decel_trigger' (e.g., -800 ERPM/s^2) 
+     *      due to a heavy transient load step, instantly command a state transition 
+     *      to STALL_CATCH to wake up the stator motoring mode.
+     *
+     * 3. Idle and slightly below Idle Current reduction:
+     *      From the minimum Idle ERPM to the top of the stall catch ERPM threshold,
+     *      ramp the current production to zero over this window (stall catch ERPM
+     *      threshold = 0% requested current -> min Idle ERPM 100% requested current).
+     */
     
     // JAHTODO make stall catch decision here.
     float current_mgu_erpm = fabsf(mcpwm_foc_get_rpm());
@@ -246,16 +276,38 @@ static void state_stall_catch_entry(motor_all_state_t *motor) {
 }
 
 static wrsm_super_state_t state_stall_catch_tick(motor_all_state_t *motor, float dt) {
+    /*
+     * JAH FUTURE ROADMAP: ANTI-STALL FLYING CATCH CONTROLLER
+     *
+     * 1. Transition to Stiff Motoring Loop:
+     *    - Instantly override the FOC stator current limits to maximum motoring torque 
+     *      ('wrsm_stall_catch_max_iq') and disable generator behavior.
+     *    - Swap the standard speed PID gains to our dedicated anti-stall parameters 
+     *      ('wrsm_stall_catch_kp', 'wrsm_stall_catch_ki') to create a fast, stiff 
+     *      motoring response that fights crankshaft deceleration.
+     *    - Command the Speed PID targeting 'wrsm_stall_catch_target_rpm' 
+     *      (MGU target idle, e.g., 2400 ERPM).
+     *
+     * 2. Exit/Recovery Routing:
+     *    - Recovery Success: If engine RPM climbs back above 'MGU_RPM_RUNNING_THRESHOLD',
+     *      relinquish motoring control, restore regular FOC configurations, 
+     *      and transition back to ALTERNATOR_ACTIVE mode.
+     *    - Recovery Failure/Engine Stalled: If engine speed falls below the absolute 
+     *      stationary limit ('MGU_RPM_STOPPED_THRESHOLD') OR if 'STALL_RECOVERY_TIMEOUT' 
+     *      (1.5s) is reached without recovery, float the gates and return to STANDBY_OFF 
+     *      to prevent burning stator windings on a locked engine.
+     */
+
+
     // JAHTODO add actual code for stall catch
     // set stall catch speed pid accel rate, should be higher than start, or even off.
     // switch to mcpwm_foc_set_pid_speed(calc target)
     
-    // JAHTODO find all / pole_pairs antipattern and do the multiply from state off pattern. 
-    float current_mgu_rpm = fabsf(mcpwm_foc_get_rpm()) / pole_pairs;
+    float current_mgu_erpm = fabsf(mcpwm_foc_get_rpm());
 
-    if (current_mgu_rpm > MGU_RPM_RUNNING_THRESHOLD) {
+    if (current_mgu_erpm > MGU_RPM_RUNNING_THRESHOLD) {
         return WRSM_SUPER_STATE_ALTERNATOR;
-    } else if (current_mgu_rpm < MGU_RPM_STOPPED_THRESHOLD || state_timer >= STALL_RECOVERY_TIMEOUT) {
+    } else if (current_mgu_erpm < MGU_RPM_STOPPED_THRESHOLD || state_timer >= STALL_RECOVERY_TIMEOUT) {
         return WRSM_SUPER_STATE_OFF;
     }
     return WRSM_SUPER_STATE_STALL_CATCH;
@@ -272,7 +324,7 @@ static wrsm_super_state_t state_fault_tick(motor_all_state_t *motor, float dt) {
     if (mc_interface_get_fault() == FAULT_CODE_NONE) {
         
         float current_erpm = fabsf(mcpwm_foc_get_rpm());
-        float erpm_threshold = MGU_RPM_STOPPED_THRESHOLD * pole_pairs;
+        float erpm_threshold = MGU_RPM_STOPPED_THRESHOLD * POLE_PAIRS;
         
         // automatic move to alternator mode prevents letting stator current flow 
         // through body diodes due to spin + base flux.
@@ -402,22 +454,37 @@ static void process_internal_transition(motor_all_state_t *motor) {
 void wrsm_supervisor_init(motor_all_state_t *motor) {
     m_active_motor = motor;
     state_timer = 0.0f;
-    pole_pairs = 8.0f;
 }
 
 void wrsm_supervisor_update(motor_all_state_t *motor, float dt) {
     m_active_motor = motor;
     state_timer += dt;
+    float current_speed = mcpwm_foc_get_rpm();
+    float raw_accel = 0.0f;
+
+    if (dt > 0.0f) {
+        raw_accel = (current_speed - motor->m_speed_prev_for_accel) / dt;
+    }
+    motor->m_speed_prev_for_accel = current_speed;
+    motor->m_accel = raw_accel;
+
+    // Apply native exponential low-pass filter
+    float filter_coef = motor->m_conf->wrsm_accel_filter_coef;
+    UTILS_LP_FAST(motor->m_accel_filtered, raw_accel, filter_coef);
 
     // --- GLOBAL SAFETY TRANSITION INTERLOCKS ---
     // 1. Terminal Hardware ESTOP Check (Absolute dead-end)
     if (motor->m_field_ESTOP_LOCKOUT) {
         requested_state = WRSM_SUPER_STATE_ESTOP;
+        process_internal_transition(motor);
+        return;
     }
 
     // 2. Recoverable Inverter/Stator Fault Check (Normal recoverable fault)
     if (mc_interface_get_fault() != FAULT_CODE_NONE && current_state != WRSM_SUPER_STATE_ESTOP) {
         requested_state = WRSM_SUPER_STATE_FAULT;
+        process_internal_transition(motor);
+        return;
     }
 
     // --- THE TIMING SCHEDULER PARTITION ---

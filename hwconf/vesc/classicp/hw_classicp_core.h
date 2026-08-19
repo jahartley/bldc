@@ -343,6 +343,8 @@
 #endif
 #define MCCONF_FOC_NO_POLES             16
 
+#define POLE_PAIRS ((float)MCCONF_FOC_NO_POLES / 2.0f)
+
 // --- FIELD RESISTANCE
 #define MGU_FIELD_R                  5.60    //field resistance at 22 °C
 // --- FIELD CURRENT SENSOR (ACS712-05B STANDARD DIRECT VIA ONBOARD 10k/10k) ---
@@ -360,12 +362,25 @@
 #define FIELD_CURRENT_FAULT_VOLTAGE_MAX       2.20f   // Catches raw sensor rail overvoltage surges
 #define FIELD_CURRENT_FAULT_DEBOUNCE_CYCLES   100     // 5ms filter debounce window
 
-// JAHTODO Add these to the MCCONF struct, default restore, and saving to flash...
-// --- JAH: WRSM Cranking Defaults ---
-//conf->wrsm_crank_target_rpm = 4800.0f;
-//conf->wrsm_crank_ramp_time = 5.0f;
-// HANDOFF ERPM uses MCCONF_FOC_SL_ERPM value.
-//conf->wrsm_crank_target_iq = 100.0f;
+// --- JAH: WRSM Motor-Generator Unit Cranking Defaults ---
+#define MCCONF_WRSM_CRANK_TARGET_RPM          4800.0f  // 600 engine RPM * 8 PP
+#define MCCONF_WRSM_CRANK_RAMP_TIME           10.0f    // 10s starting ramp time
+#define MCCONF_WRSM_CRANK_TARGET_IQ           100.0f   // 100A starting current target
+
+// --- JAH: WRSM Motor-Generator Unit Alternator Defaults ---
+#define MCCONF_WRSM_ALT_TARGET_VOLTAGE        14.2f    // Regulate 12V bus to 14.2V
+#define MCCONF_WRSM_ALT_BATT_CHARGE_LIMIT     20.0f    // Clamp direct battery charge to 20A max
+#define MCCONF_WRSM_ALT_MAX_IQ                250.0f   // Let stator generate up to 250A for loads
+#define MCCONF_WRSM_ALT_CAN_TIMEOUT_MS        250.0f   // Fall back to voltage mode after 250ms silence
+
+// --- JAH: WRSM Motor-Generator Unit Stall Catch Defaults ---
+#define MCCONF_WRSM_STALL_CATCH_TRIGGER_RPM   1200.0f  // Catch engine if sags below 150 MGU RPM (18.75 Hz)
+#define MCCONF_WRSM_STALL_CATCH_TARGET_RPM    2400.0f  // Motoring target speed for catch mode (300 ERPM)
+#define MCCONF_WRSM_STALL_CATCH_MAX_IQ        150.0f   // Deliver up to 150A to catch the block
+#define MCCONF_WRSM_STALL_CATCH_KP            0.15f    // Stiff proportional gain for transient catches
+#define MCCONF_WRSM_STALL_CATCH_KI            0.080f   // Stiff integral gain to settle caught idle quickly
+#define MCCONF_WRSM_STALL_DECEL_TRIGGER       -800.0f  // Catch engine if deceleration exceeds -800 ERPM/s^2
+#define MCCONF_WRSM_ACCEL_FILTER_COEF         0.05f    // Clean low-pass filter coefficient for d_speed/dt
 
 // Speed control PID settings
 // needs to work down to zero rpm.
@@ -417,7 +432,7 @@
 #undef MCCONF_FOC_SL_OPENLOOP_T_LOCK
 #endif
 #define MCCONF_FOC_SL_OPENLOOP_T_LOCK  0.0f
-// Time to reach MCCONF_FOC_SL_ERPM
+// Time to reach MCCONF_FOC_OPENLOOP_RPM, DEFAULT VALUE, can be edited!
 #ifdef MCCONF_FOC_SL_OPENLOOP_T_RAMP
 #undef MCCONF_FOC_SL_OPENLOOP_T_RAMP
 #endif
@@ -429,6 +444,7 @@
 #define MCCONF_FOC_SL_OPENLOOP_TIME    0.00f
 
 // Tuned Speed PID gains for 300A Max Automotive Engine Cranking
+// THESE WILL BE CONFIG DEFAULT VALUES.
 // stock P is 0.002, recommended was 0.015
 #ifdef MCCONF_S_PID_KP
 #undef MCCONF_S_PID_KP

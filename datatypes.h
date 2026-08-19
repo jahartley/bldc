@@ -590,9 +590,24 @@ typedef struct {
 	// --- JAH: Field current offset.
 	float m_field_current_offset_v;
 	// --- JAH: Wound Rotor Synchronous Machine Cranking Parameters ---
-    float wrsm_crank_target_rpm;      // Target holding speed (ERPM)
-    float wrsm_crank_ramp_time;       // Total ramp duration from 0 to target (seconds)
-    float wrsm_crank_target_iq;       // Target starting torque current at standstill (A)
+    float wrsm_crank_target_rpm;          // Target holding speed (ERPM)
+    float wrsm_crank_ramp_time;           // Total ramp duration from 0 to target (seconds)
+    float wrsm_crank_target_iq;           // Target starting torque current at standstill (A)
+
+    // --- JAH: Wound Rotor Synchronous Machine Alternator Parameters ---
+    float wrsm_alt_target_voltage;        // Target bus charging voltage to maintain (V)
+    float wrsm_alt_batt_charge_limit;     // Maximum allowed current flowing directly into battery (A)
+    float wrsm_alt_max_iq;                // Absolute maximum generating stator current (A)
+    float wrsm_alt_can_timeout_ms;        // BMS CAN-bus watchdog timeout (ms)
+
+    // --- JAH: Wound Rotor Synchronous Machine Stall Catch Parameters ---
+    float wrsm_stall_catch_trigger_rpm;   // MGU speed below which a stall is declared imminent (ERPM)
+    float wrsm_stall_catch_target_rpm;    // Mechanical target speed motoring will pull engine up to (ERPM)
+    float wrsm_stall_catch_max_iq;        // Maximum motoring current allowed to catch the engine (A)
+    float wrsm_stall_catch_kp;            // Dedicated Proportional gain for the catching Speed PID loop
+    float wrsm_stall_catch_ki;            // Dedicated Integral gain for the catching Speed PID loop
+    float wrsm_stall_decel_trigger;       // Negative acceleration threshold (ERPM/s^2)
+    float wrsm_accel_filter_coef;         // Low-pass filter coefficient for d_speed/dt [0.01-1.00]
 
 	// BMS Configuration
 	bms_config bms;

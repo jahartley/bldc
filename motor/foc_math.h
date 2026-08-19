@@ -267,6 +267,11 @@ typedef struct {
 	bool m_field_override_active;	// Was field_override_active
 	float m_field_override_current;	// Was field_override_value
 	float m_stator_fw_id;           // Pre-calculated unmet stator field-weakening id current
+
+	// --- JAH: WRSM Acceleration (1st speed derivative) tracker variables ---
+    float m_speed_prev_for_accel;  	// Motor speed from previous 1kHz tick (ERPM)
+	float m_accel;       			// Motor acceleration/deceleration (ERPM/s)
+    float m_accel_filtered;       	// Filtered motor acceleration/deceleration (ERPM/s)
 } motor_all_state_t;
 
 // Functions

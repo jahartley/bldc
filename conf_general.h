@@ -245,6 +245,7 @@ int conf_general_detect_apply_all_foc_can(bool detect_can, float max_power_loss,
 										  float min_current_in, float max_current_in,
 										  float openloop_rpm, float sl_erpm,
 										  void(*reply_func)(unsigned char* data, unsigned int len));
+void conf_general_bootstrap_wrsm_defaults(mc_configuration *conf);
 
 
 #endif /* CONF_GENERAL_H_ */

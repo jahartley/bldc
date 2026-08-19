@@ -1036,7 +1036,123 @@ void terminal_process_string(char *str) {
 		commands_printf("Injected Flux       : %.3f mWb", (double)(motor->m_injected_flux * 1e3));
 		commands_printf("Injected Ld / Lq    : %.2f uH / %.2f uH", (double)(motor->m_injected_ld * 1e6), (double)(motor->m_injected_lq * 1e6));
 		commands_printf("Button Switch State : %s\n", smart_switch_is_pressed() ? "PRESSED" : "RELEASED");
-	} else if (strcmp(argv[0], "conf_default") == 0) {
+	} else if (strcmp(argv, "wrsm_list") == 0) {
+        commands_printf("=== Available WRSM & FOC Tuning Parameters ===");
+        commands_printf("Parameter Name       | Unit        | Description");
+        commands_printf("---------------------+-------------+----------------------------------------");
+        commands_printf("crank_target_rpm     | ERPM        | WRSM target starter holding speed");
+        commands_printf("crank_ramp_time      | seconds     | WRSM starting ramp duration");
+        commands_printf("crank_target_iq      | Amperes     | WRSM standstill starter current target");
+        commands_printf("handoff_rpm          | ERPM        | FOC openloop-to-observer handoff speed");
+        commands_printf("speed_kp             | -           | Speed PID proportional gain");
+        commands_printf("speed_ki             | -           | Speed PID integral gain");
+        commands_printf("speed_kd             | -           | Speed PID derivative gain");
+        commands_printf("speed_kd_filter      | -           | Speed PID derivative LPF cutoff filter");
+        commands_printf("current_max          | Amperes     | Stator absolute motor current limit");
+        commands_printf("batt_max_discharge   | Amperes     | Maximum allowed battery output current");
+        commands_printf("batt_max_charge      | Amperes     | Maximum allowed battery charging current");
+        commands_printf("alt_target_voltage   | Volts       | WRSM alternator target bus voltage");
+        commands_printf("alt_batt_limit       | Amperes     | BMS direct battery charging limit");
+        commands_printf("alt_max_iq           | Amperes     | Maximum alternator generated stator current");
+        commands_printf("alt_can_timeout      | ms          | CAN-bus BMS watchdog timeout threshold");
+        commands_printf("stall_trigger        | ERPM        | Speed threshold to trigger stall catch");
+        commands_printf("stall_target         | ERPM        | Motoring speed target for stall catch");
+        commands_printf("stall_max_iq         | Amperes     | Maximum motoring current for stall catch");
+        commands_printf("stall_kp             | -           | Dedicated Stall Catch PID Kp");
+        commands_printf("stall_ki             | -           | Dedicated Stall Catch PID Ki");
+        commands_printf("stall_decel          | ERPM/s^2    | Deceleration trigger for stall catch");
+        commands_printf("accel_filter_coef    | -           | Low-pass filter for d_speed/dt [0.01-1.00]");
+        commands_printf(" ");
+    } else if (strcmp(argv, "wrsm_get") == 0) {
+        const mc_configuration *conf = mc_interface_get_configuration();
+        commands_printf("=== WRSM & CORE FOC RUNNING PARAMETERS ===");
+        commands_printf("--- Crank & Motoring ---");
+        commands_printf("  crank_target_rpm   : %.1f ERPM", (double)conf->wrsm_crank_target_rpm);
+        commands_printf("  crank_ramp_time    : %.2f s", (double)conf->wrsm_crank_ramp_time);
+        commands_printf("  crank_target_iq    : %.1f A", (double)conf->wrsm_crank_target_iq);
+        commands_printf("  handoff_rpm        : %.1f ERPM", (double)conf->foc_openloop_rpm);
+        commands_printf("  speed_kp           : %.4f", (double)conf->s_pid_kp);
+        commands_printf("  speed_ki           : %.4f", (double)conf->s_pid_ki);
+        commands_printf("  speed_kd           : %.5f", (double)conf->s_pid_kd);
+        commands_printf("  speed_kd_filter    : %.3f", (double)conf->s_pid_kd_filter);
+        commands_printf("--- Current Limits ---");
+        commands_printf("  current_max        : %.1f A", (double)conf->l_current_max);
+        commands_printf("  batt_max_discharge : %.1f A", (double)conf->l_in_current_max);
+        commands_printf("  batt_max_charge    : %.1f A", (double)conf->l_in_current_min);
+        commands_printf("--- Alternator Mode ---");
+        commands_printf("  alt_target_voltage : %.2f V", (double)conf->wrsm_alt_target_voltage);
+        commands_printf("  alt_batt_limit     : %.1f A", (double)conf->wrsm_alt_batt_charge_limit);
+        commands_printf("  alt_max_iq         : %.1f A", (double)conf->wrsm_alt_max_iq);
+        commands_printf("  alt_can_timeout    : %.1f ms", (double)conf->wrsm_alt_can_timeout_ms);
+        commands_printf("--- Anti-Stall / Stall Catch ---");
+        commands_printf("  stall_trigger      : %.1f ERPM", (double)conf->wrsm_stall_catch_trigger_rpm);
+        commands_printf("  stall_target       : %.1f ERPM", (double)conf->wrsm_stall_catch_target_rpm);
+        commands_printf("  stall_max_iq       : %.1f A", (double)conf->wrsm_stall_catch_max_iq);
+        commands_printf("  stall_kp           : %.4f", (double)conf->wrsm_stall_catch_kp);
+        commands_printf("  stall_ki           : %.4f", (double)conf->wrsm_stall_catch_ki);
+        commands_printf("  stall_decel        : %.1f ERPM/s^2", (double)conf->wrsm_stall_decel_trigger);
+        commands_printf("  accel_filter_coef  : %.4f", (double)conf->wrsm_accel_filter_coef);
+        commands_printf(" ");
+    } else if (strcmp(argv, "wrsm_set") == 0) {
+        if (argc == 3) {
+            float val = 0.0f;
+            if (sscanf(argv[2], "%f", &val) == 1) {
+                mc_configuration *mcconf = mempools_alloc_mcconf();
+                *mcconf = *mc_interface_get_configuration();
+                bool matched = true;
+
+                if (strcmp(argv[1], "crank_target_rpm") == 0)        mcconf->wrsm_crank_target_rpm = val;
+                else if (strcmp(argv[1], "crank_ramp_time") == 0)    mcconf->wrsm_crank_ramp_time = val;
+                else if (strcmp(argv[1], "crank_target_iq") == 0)    mcconf->wrsm_crank_target_iq = val;
+                else if (strcmp(argv[1], "handoff_rpm") == 0)        mcconf->foc_openloop_rpm = val;
+                else if (strcmp(argv[1], "speed_kp") == 0)           mcconf->s_pid_kp = val;
+                else if (strcmp(argv[1], "speed_ki") == 0)           mcconf->s_pid_ki = val;
+                else if (strcmp(argv[1], "speed_kd") == 0)           mcconf->s_pid_kd = val;
+                else if (strcmp(argv[1], "speed_kd_filter") == 0)    mcconf->s_pid_kd_filter = val;
+                else if (strcmp(argv[1], "current_max") == 0)        mcconf->l_current_max = val;
+                else if (strcmp(argv[1], "batt_max_discharge") == 0) mcconf->l_in_current_max = val;
+                else if (strcmp(argv[1], "batt_max_charge") == 0)    mcconf->l_in_current_min = val;
+                else if (strcmp(argv[1], "alt_target_voltage") == 0) mcconf->wrsm_alt_target_voltage = val;
+                else if (strcmp(argv[1], "alt_batt_limit") == 0)     mcconf->wrsm_alt_batt_charge_limit = val;
+                else if (strcmp(argv[1], "alt_max_iq") == 0)         mcconf->wrsm_alt_max_iq = val;
+                else if (strcmp(argv[1], "alt_can_timeout") == 0)    mcconf->wrsm_alt_can_timeout_ms = val;
+                else if (strcmp(argv[1], "stall_trigger") == 0)      mcconf->wrsm_stall_catch_trigger_rpm = val;
+                else if (strcmp(argv[1], "stall_target") == 0)       mcconf->wrsm_stall_catch_target_rpm = val;
+                else if (strcmp(argv[1], "stall_max_iq") == 0)       mcconf->wrsm_stall_catch_max_iq = val;
+                else if (strcmp(argv[1], "stall_kp") == 0)           mcconf->wrsm_stall_catch_kp = val;
+                else if (strcmp(argv[1], "stall_ki") == 0)           mcconf->wrsm_stall_catch_ki = val;
+                else if (strcmp(argv[1], "stall_decel") == 0)        mcconf->wrsm_stall_decel_trigger = val;
+                else if (strcmp(argv, "accel_filter_coef") == 0)     mcconf->wrsm_accel_filter_coef = val;
+                else {
+                    matched = false;
+                    commands_printf("Error: Unknown parameter name: %s", argv[1]);
+                }
+
+                if (matched) {
+                    mc_interface_set_configuration(mcconf);
+                    commands_printf("WRSM Parameter %s updated to %.4f in RAM.", argv[1], (double)val);
+                }
+                mempools_free_mcconf(mcconf);
+            } else {
+                commands_printf("Error: Invalid numeric float value.");
+            }
+        } else {
+            commands_printf("Usage: wrsm_set [param_name] [value]");
+        }
+    } else if (strcmp(argv, "wrsm_save") == 0) {
+        mc_configuration *mcconf = mempools_alloc_mcconf();
+        *mcconf = *mc_interface_get_configuration();
+        
+        // Save using native helper, checking if we are on Motor 2 thread context
+        bool success = conf_general_store_mc_configuration(mcconf, mc_interface_get_motor_thread() == 2);
+        mempools_free_mcconf(mcconf);
+
+        if (success) {
+            commands_printf("WRSM Configuration successfully saved to physical Flash!\r\n");
+        } else {
+            commands_printf("Error: Flash write lock failed!\r\n");
+        }
+    } else if (strcmp(argv[0], "conf_default") == 0) {
 		mc_configuration *mcconf = mempools_alloc_mcconf();
 		*mcconf = *mc_interface_get_configuration();
 		confgenerator_set_defaults_mcconf(mcconf);
@@ -1358,6 +1474,19 @@ void terminal_process_string(char *str) {
 
 		commands_printf("rebootwdt");
 		commands_printf("  Reboot using the watchdog timer.");
+		
+		commands_printf("wrsm");
+        commands_printf("  Prints the live wrsm parameters");
+		commands_printf("wrsm_list");
+        commands_printf("  Prints all adjustable WRSM and core FOC parameter names");
+		commands_printf("wrsm_get");
+        commands_printf("  Prints the complete active WRSM RAM configurations");
+        commands_printf("wrsm_set [param] [val]");
+        commands_printf("  Modifies a WRSM parameter in RAM immediately");
+        commands_printf("wrsm_save");
+        commands_printf("  Permanently writes running RAM configuration to Flash");
+		commands_printf("conf_default");
+        commands_printf("  loads and saves the complete default configuration, overwriting the current ram config, and saves to flash.");
 
 		for (int i = 0;i < callback_write;i++) {
 			if (callbacks[i].cbf == 0) {

@@ -466,12 +466,9 @@ __attribute__((section(".text2"))) void conf_general_read_mc_configuration(mc_co
 	}
 
 	// ============================================================================
-    // JAH: Safe Fallback Bootstrap for Field Current Offset
-    // Guarantees offset is valid even if reading from old EEPROM or default generator
+    // JAH: Safe Fallback Bootstrap for WRSM Custom Parameters
     // ============================================================================
-    if (conf->m_field_current_offset_v < 0.5f || conf->m_field_current_offset_v > 2.5f) {
-        conf->m_field_current_offset_v = FIELD_CURRENT_VOLTAGE_OFFSET_V; // Default 1.234V [1]
-    }
+    conf_general_bootstrap_wrsm_defaults(conf);
 }
 
 /**
@@ -2288,4 +2285,38 @@ int conf_general_detect_apply_all_foc_can(bool detect_can, float max_power_loss,
 	mc_interface_select_motor_thread(motor_last);
 
 	return res;
+}
+
+/**
+ * @brief  Guarantees WRSM parameters are safe and initialized in RAM.
+ *         Pre-seeds all custom fields with hardware default macros if they
+ *         are read as uninitialized (0.0f) or are out of safety bounds.
+ */
+void conf_general_bootstrap_wrsm_defaults(mc_configuration *conf) {
+    // Stator/Field Current Sensor Rest Voltage check
+    if (conf->m_field_current_offset_v < 0.5f || conf->m_field_current_offset_v > 2.5f) {
+        conf->m_field_current_offset_v = FIELD_CURRENT_VOLTAGE_OFFSET_V; // Default 1.234V
+    }
+
+    // --- Starting Envelope ---
+    if (conf->wrsm_crank_target_rpm < 100.0f)     conf->wrsm_crank_target_rpm = MCCONF_WRSM_CRANK_TARGET_RPM;
+    if (conf->wrsm_crank_ramp_time < 0.1f)        conf->wrsm_crank_ramp_time  = MCCONF_WRSM_CRANK_RAMP_TIME;
+    if (conf->wrsm_crank_target_iq < 1.0f)        conf->wrsm_crank_target_iq  = MCCONF_WRSM_CRANK_TARGET_IQ;
+
+    // --- Charging Envelope ---
+    if (conf->wrsm_alt_target_voltage < 8.0f)     conf->wrsm_alt_target_voltage = MCCONF_WRSM_ALT_TARGET_VOLTAGE;
+    if (conf->wrsm_alt_batt_charge_limit < 1.0f)  conf->wrsm_alt_batt_charge_limit = MCCONF_WRSM_ALT_BATT_CHARGE_LIMIT;
+    if (conf->wrsm_alt_max_iq < 1.0f)             conf->wrsm_alt_max_iq = MCCONF_WRSM_ALT_MAX_IQ;
+    if (conf->wrsm_alt_can_timeout_ms < 10.0f)    conf->wrsm_alt_can_timeout_ms = MCCONF_WRSM_ALT_CAN_TIMEOUT_MS;
+
+    // --- Anti-Stall Envelope ---
+    if (conf->wrsm_stall_catch_trigger_rpm < 100.0f)  conf->wrsm_stall_catch_trigger_rpm = MCCONF_WRSM_STALL_CATCH_TRIGGER_RPM;
+    if (conf->wrsm_stall_catch_target_rpm < 100.0f)   conf->wrsm_stall_catch_target_rpm  = MCCONF_WRSM_STALL_CATCH_TARGET_RPM;
+    if (conf->wrsm_stall_catch_max_iq < 1.0f)         conf->wrsm_stall_catch_max_iq      = MCCONF_WRSM_STALL_CATCH_MAX_IQ;
+    if (conf->wrsm_stall_catch_kp < 0.001f)           conf->wrsm_stall_catch_kp          = MCCONF_WRSM_STALL_CATCH_KP;
+    if (conf->wrsm_stall_catch_ki < 0.0001f)          conf->wrsm_stall_catch_ki          = MCCONF_WRSM_STALL_CATCH_KI;
+    if (conf->wrsm_stall_decel_trigger > -1.0f)       conf->wrsm_stall_decel_trigger     = MCCONF_WRSM_STALL_DECEL_TRIGGER;
+    if (conf->wrsm_accel_filter_coef < 0.001f || conf->wrsm_accel_filter_coef > 1.0f) {
+        conf->wrsm_accel_filter_coef = MCCONF_WRSM_ACCEL_FILTER_COEF;
+    }
 }
