@@ -488,6 +488,7 @@ void wrsm_supervisor_update(motor_all_state_t *motor, float dt) {
     // JAH: Web Serial Diagnostic Telemetry (1 kHz Execution)
     // ============================================================================
     
+    static uint32_t telemetry_packet_counter = 0;
     // Persistent EMA variables (Zero memory footprint, zero arrays)
     static float accel_avg = 0.0f;
     static float accel_mad = 0.0f;
@@ -526,7 +527,7 @@ void wrsm_supervisor_update(motor_all_state_t *motor, float dt) {
 
     // Continuous Double-EMA Filters (alpha = 0.10f rough equivalent to a 10ms-15ms time-constant)
     const float alpha = 0.10f;
-    
+
     // Speed Derivatives & Vibrations
     accel_avg  += alpha * (motor->m_accel - accel_avg);
     accel_mad  += alpha * (fabsf(motor->m_accel - accel_avg) - accel_mad);
@@ -567,6 +568,7 @@ void wrsm_supervisor_update(motor_all_state_t *motor, float dt) {
             // Instantiate and pack our telemetry packet struct
             wrsm_telemetry_packet_t packet;
             packet.start_marker  = 0xAA;
+            packet.packet_id     = telemetry_packet_counter++;
             packet.super_state   = (uint8_t)current_state;
             packet.mc_state      = (uint8_t)motor->m_state;
             packet.ctrl_mode     = (uint8_t)motor->m_control_mode;

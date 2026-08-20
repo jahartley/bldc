@@ -26,6 +26,7 @@ typedef enum {
 #pragma pack(push, 1)
 typedef struct {
     uint8_t start_marker;     // 0xAA - Fixed alignment byte for browser synchronization
+    uint32_t packet_id;       // 4-byte sequence counter
     uint8_t super_state;      // WRSM Supervisor State ID (Enum)
     uint8_t mc_state;         // VESC Motor State (Enum)
     uint8_t ctrl_mode;        // FOC Active Control Mode (Enum)
