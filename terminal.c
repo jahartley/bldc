@@ -1036,7 +1036,7 @@ void terminal_process_string(char *str) {
 		commands_printf("Injected Flux       : %.3f mWb", (double)(motor->m_injected_flux * 1e3));
 		commands_printf("Injected Ld / Lq    : %.2f uH / %.2f uH", (double)(motor->m_injected_ld * 1e6), (double)(motor->m_injected_lq * 1e6));
 		commands_printf("Button Switch State : %s\n", smart_switch_is_pressed() ? "PRESSED" : "RELEASED");
-	} else if (strcmp(argv, "wrsm_list") == 0) {
+	} else if (strcmp(argv[0], "wrsm_list") == 0) {
         commands_printf("=== Available WRSM & FOC Tuning Parameters ===");
         commands_printf("Parameter Name       | Unit        | Description");
         commands_printf("---------------------+-------------+----------------------------------------");
@@ -1063,7 +1063,7 @@ void terminal_process_string(char *str) {
         commands_printf("stall_decel          | ERPM/s^2    | Deceleration trigger for stall catch");
         commands_printf("accel_filter_coef    | -           | Low-pass filter for d_speed/dt [0.01-1.00]");
         commands_printf(" ");
-    } else if (strcmp(argv, "wrsm_get") == 0) {
+    } else if (strcmp(argv[0], "wrsm_get") == 0) {
         const mc_configuration *conf = mc_interface_get_configuration();
         commands_printf("=== WRSM & CORE FOC RUNNING PARAMETERS ===");
         commands_printf("--- Crank & Motoring ---");
@@ -1093,7 +1093,7 @@ void terminal_process_string(char *str) {
         commands_printf("  stall_decel        : %.1f ERPM/s^2", (double)conf->wrsm_stall_decel_trigger);
         commands_printf("  accel_filter_coef  : %.4f", (double)conf->wrsm_accel_filter_coef);
         commands_printf(" ");
-    } else if (strcmp(argv, "wrsm_set") == 0) {
+    } else if (strcmp(argv[0], "wrsm_set") == 0) {
         if (argc == 3) {
             float val = 0.0f;
             if (sscanf(argv[2], "%f", &val) == 1) {
@@ -1139,7 +1139,7 @@ void terminal_process_string(char *str) {
         } else {
             commands_printf("Usage: wrsm_set [param_name] [value]");
         }
-    } else if (strcmp(argv, "wrsm_save") == 0) {
+    } else if (strcmp(argv[0], "wrsm_save") == 0) {
         mc_configuration *mcconf = mempools_alloc_mcconf();
         *mcconf = *mc_interface_get_configuration();
         
@@ -1152,13 +1152,13 @@ void terminal_process_string(char *str) {
         } else {
             commands_printf("Error: Flash write lock failed!\r\n");
         }
-    } else if (strcmp(argv, "wrsm_stream") == 0) {
+    } else if (strcmp(argv[0], "wrsm_stream") == 0) {
         if (argc == 2) {
-            if (strcmp(argv[8], "on") == 0) {
+            if (strcmp(argv[1], "on") == 0) {
                 wrsm_supervisor_set_telemetry_enabled(true);
                 commands_printf("WRSM Binary Telemetry stream: ENABLED (50Hz Binary mode active)\r\n");
             } 
-            else if (strcmp(argv[8], "off") == 0) {
+            else if (strcmp(argv[1], "off") == 0) {
                 wrsm_supervisor_set_telemetry_enabled(false);
                 commands_printf("WRSM Binary Telemetry stream: DISABLED\r\n");
             } 

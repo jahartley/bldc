@@ -98,7 +98,6 @@ static void state_stopping_entry(motor_all_state_t *motor) {
 static wrsm_super_state_t state_stopping_tick(motor_all_state_t *motor, float dt) {
     // If stopping occurred during Open-Loop (standstill / low speed start),
     // float the gates immediately since there is no high-speed BEMF!
-    mcpwm_foc_stop_pwm(false);
     if (motor->m_phase_observer_override) {
         mcpwm_foc_stop_pwm(false); // Sets m_state = MC_STATE_OFF & clears override
         return WRSM_SUPER_STATE_OFF;
@@ -194,9 +193,9 @@ static void state_cranking_entry(motor_all_state_t *motor) {
 
 static wrsm_super_state_t state_cranking_tick(motor_all_state_t *motor, float dt) {
     float current_mgu_erpm = fabsf(mcpwm_foc_get_rpm());
-    float started_threshold_erpm = motor->m_conf->wrsm_crank_target_rpm * 1.5f; //1%0% of start erpm
+    float started_threshold_erpm = motor->m_conf->wrsm_crank_target_rpm * 1.5f; //150% of start erpm
 
-    if (current_mgu_erpm > started_threshold_erpm) { // Already beyond 120% target_erpm, must be driven by engine.
+    if (current_mgu_erpm > started_threshold_erpm) { // Already beyond 150% target_erpm, must be driven by engine.
         return WRSM_SUPER_STATE_ALTERNATOR;
     } else if (state_timer >= CRANK_TIMEOUT_SEC) { // Max start time elapsed.
         return WRSM_SUPER_STATE_STOPPING;

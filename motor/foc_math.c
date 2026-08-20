@@ -643,7 +643,7 @@ void foc_run_pid_control_speed(bool index_found, float dt, motor_all_state_t *mo
         float ld_lq_diff  = motor->m_injected_ld_lq_diff;
         float iq          = motor->m_motor_state.iq;
         float id          = motor->m_motor_state.id;
-        float p           = (float)conf_now->foc_no_poles / 2.0f;
+        float p           = POLE_PAIRS;
 
         float t_mag       = 1.5f * p * lambda * iq;
         float t_rel       = -1.5f * p * ld_lq_diff * id * iq;
@@ -653,7 +653,7 @@ void foc_run_pid_control_speed(bool index_found, float dt, motor_all_state_t *mo
         float power_mech  = t_total * w_mech;                 // Mechanical Output Power
 
         // 2. Live Electrical Input Power (W)
-        float i_batt      = motor->m_motor_state.i_in;        // DC battery current
+        float i_batt      = motor->m_motor_state.i_bus;        // DC battery current
         float power_elec  = v_bus * i_batt;                   // Electrical Input Power
 
         // 3. Live DC System Resistance Calculation (R_sys)
@@ -952,13 +952,11 @@ void foc_math_clear_speed_stats(motor_all_state_t *motor) {
     m_speed_stats.v_rest = motor->m_motor_state.v_bus;
     
     // Pre-initialize limits
-    m_speed_stats.min_vbus_accel = motor->m_motor_state.v_bus;
-    m_speed_stats.min_vbus_hold = motor->m_motor_state.v_bus;
     m_speed_stats.min_erpm_hold = 999999.0f;
     m_speed_stats.max_erpm_hold = -999999.0f;
     
     for (int i = 0; i < 2; i++) {
-        m_speed_stats.phases[i].min_vbus = motor->m_motor_state.v_bus;
+        m_speed_stats.phases[i].min_vbus = 0.0f;
         m_speed_stats.phases[i].min_torque = 9999.0f;
         m_speed_stats.phases[i].max_torque = -9999.0f;
     }
