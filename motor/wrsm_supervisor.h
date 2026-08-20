@@ -50,6 +50,9 @@ typedef struct {
     float   duty_max;         // Block-Max: Inverter Voltage-Saturation/Clipping Tracker (0.0 to 1.0)
     float   if_min;           // Block-Min: REPLACED lambda_min -> Peak Negative Rotor Current Sag
     float   stator_fw_id;     // Double-EMA: Stator-assisted Field Weakening Target (A)
+    float   speed_target;     // Active Speed PID Setpoint ERPM
+    float   speed_i_term;     // Active Speed PID Integrator Current Amps
+    float   i_bus;            // Raw Battery Bus Current
     uint8_t checksum;         // XOR checksum of all previous 84 bytes
 } wrsm_telemetry_packet_t;
 #pragma pack(pop)

@@ -494,7 +494,7 @@ void foc_run_pid_control_pos(bool index_found, float dt, motor_all_state_t *moto
 	}
 }
 
-// --- JAH: High-Fidelity FOC Speed PID Diagnostics ---
+/* --- JAHTOD JAHDEPRECIATED JAH: High-Fidelity FOC Speed PID Diagnostics ---
 // --- JAH: Sub-Structure for a Single Test Phase ---
 typedef struct {
     float peak_iq;            // Peak active Iq stator torque current demanded (A)
@@ -540,7 +540,7 @@ typedef struct {
 
 // Instantiate the static private struct
 static foc_speed_stats_t m_speed_stats = {0};
-
+*/
 
 void foc_run_pid_control_speed(bool index_found, float dt, motor_all_state_t *motor) {
 	mc_configuration *conf_now = motor->m_conf;
@@ -626,7 +626,7 @@ void foc_run_pid_control_speed(bool index_found, float dt, motor_all_state_t *mo
 	}
 
 	motor->m_iq_set = output * conf_now->lo_current_max * conf_now->l_current_max_scale;
-
+/* JAHTODO JAHDEPRECIATED
 // --- JAH: High-Fidelity Cycle-by-Cycle Stats Gathering ---
     if (m_speed_stats.is_recording) {
         float abs_error   = fabsf(error);
@@ -714,7 +714,8 @@ void foc_run_pid_control_speed(bool index_found, float dt, motor_all_state_t *mo
             if (current_rpm > m_speed_stats.max_erpm_hold) m_speed_stats.max_erpm_hold = current_rpm;
             if (current_rpm < m_speed_stats.min_erpm_hold) m_speed_stats.min_erpm_hold = current_rpm;
         }
-    }
+    } 
+*/
 }
 
 float foc_correct_encoder(float obs_angle, float enc_angle, float speed,
@@ -943,7 +944,7 @@ void foc_precalc_values(motor_all_state_t *motor) {
 	motor->p_dt = 1.0 / motor->p_fs;
 }
 
-
+/* JAHTODO JAHDEPRECIATED
 // --- JAH: Diagnostics API Implementation ---
 void foc_math_clear_speed_stats(motor_all_state_t *motor) {
     memset(&m_speed_stats, 0, sizeof(m_speed_stats));
@@ -1066,3 +1067,4 @@ void foc_math_print_speed_stats(motor_all_state_t *motor, bool success) {
     }
     commands_printf("=============================================================\n");
 }
+*/

@@ -81,10 +81,11 @@ static wrsm_super_state_t state_boot_tick(motor_all_state_t *motor, float dt) {
 }
 
 static wrsm_super_state_t state_stopping_guard(motor_all_state_t *motor, wrsm_super_state_t from_state) {
+    /* JAHTODO JAHDEPRECIATED
     if (from_state == WRSM_SUPER_STATE_CRANKING) {
         // Came from cranking event, print the stats.
         foc_math_print_speed_stats(motor, false);
-    }
+    } //*/
     return WRSM_SUPER_STATE_STOPPING;
 }
 
@@ -185,8 +186,9 @@ static void state_cranking_entry(motor_all_state_t *motor) {
     motor->m_conf->foc_sl_openloop_time      = 0.0f;
     motor->m_speed_pid_set_rpm               = speed_error_offset;
 
-    // Start the stats
-    foc_math_clear_speed_stats(motor);
+    // JAHTODO JAHDEPRECIATED // Start the stats
+    // JAHTODO JAHDEPRECIATED foc_math_clear_speed_stats(motor);
+    
     // Command the speed PID loop to execute
     mcpwm_foc_set_pid_speed(target_erpm);
 }
@@ -204,10 +206,11 @@ static wrsm_super_state_t state_cranking_tick(motor_all_state_t *motor, float dt
 }
 
 static wrsm_super_state_t state_alternator_guard(motor_all_state_t *motor, wrsm_super_state_t from_state) {
+    /* JAHTODO JAHDEPRECIATED 
     if (from_state == WRSM_SUPER_STATE_CRANKING) {
         // Came from cranking event, print the stats.
         foc_math_print_speed_stats(motor, true);
-    }
+    } // */
     return WRSM_SUPER_STATE_ALTERNATOR;
 }
 
@@ -503,6 +506,7 @@ void wrsm_supervisor_update(motor_all_state_t *motor, float dt) {
     static float vbus_avg = 0.0f;
     static float duty_avg = 0.0f;
     static float stator_fw_avg = 0.0f;
+    static float ibus_avg = 0.0f;
 
     // Block Transient Detectors (Reset every 20ms telemetry window)
     static float id_min = 999.0f;
@@ -550,6 +554,7 @@ void wrsm_supervisor_update(motor_all_state_t *motor, float dt) {
     vbus_avg   += alpha * (raw_vbus - vbus_avg);
     duty_avg   += alpha * (raw_duty - duty_avg);
     stator_fw_avg += alpha * (raw_sfw - stator_fw_avg);
+    ibus_avg   += alpha * (motor->m_motor_state.i_bus - ibus_avg);
 
     // 3. Update Block-Level Transient Peak Catchers
     if (raw_id > id_max)     id_max = raw_id;
@@ -592,6 +597,9 @@ void wrsm_supervisor_update(motor_all_state_t *motor, float dt) {
             packet.duty_max      = duty_max;
             packet.if_min        = if_min;
             packet.stator_fw_id  = stator_fw_avg;
+            packet.speed_target  = motor->m_speed_pid_set_rpm;
+            packet.speed_i_term  = motor->m_speed_i_term;
+            packet.i_bus         = ibus_avg;
 
             // Generate the XOR Packet Checksum
             uint8_t calc_checksum = 0;
