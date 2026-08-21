@@ -346,7 +346,8 @@
 #define POLE_PAIRS ((float)MCCONF_FOC_NO_POLES / 2.0f)
 
 // --- FIELD RESISTANCE
-#define MGU_FIELD_R                  5.60    //field resistance at 22 °C
+#define MGU_FIELD_R                  5.60    //Ohm field resistance at 22 °C
+#define MGU_FIELD_L                  1.912   //H 1912mH determined by telemetry analysis 20260821 JAH 
 // --- FIELD CURRENT SENSOR (ACS712-05B STANDARD DIRECT VIA ONBOARD 10k/10k) ---
 #define FIELD_CURRENT_SENSOR_UNI_DIRECTIONAL  1       // 1 for forward-only tracking
 #define FIELD_CURRENT_VOLTAGE_OFFSET_V        1.234f  // Your physical calibrated 0.0A rest voltage on the pin

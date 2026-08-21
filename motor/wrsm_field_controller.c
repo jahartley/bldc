@@ -32,8 +32,8 @@ static struct {
     float integrator;
     float prev_error;
 } field_pid = {
-    .kp = 0.15f,
-    .ki = 1.50f,
+    .kp = 1.50f,
+    .ki = 4.40f,
     .integrator = 0.0f,
     .prev_error = 0.0f
 };

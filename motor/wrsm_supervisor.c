@@ -18,7 +18,8 @@
 #define MGU_RPM_STOPPED_THRESHOLD   10.0f  // MGU RPM below which MGU is considered stationary
 #define CRANK_TIMEOUT_SEC           30.0f   // Maximum allowed cranking duration at start speed
 //#define CRANK_RAMP_SEC              3.0f    // Duration to ramp to start speed
-#define PRE_EXCITE_TIMEOUT_SEC      0.15f   // Maximum allowed time to build rotor flux
+// JAH PRE_EXCITE_TIMEOUT_SEC changed to 0.75 s after initial telemetry review 20260821
+#define PRE_EXCITE_TIMEOUT_SEC      0.75f   // Maximum allowed time to build rotor flux 
 #define STALL_RECOVERY_TIMEOUT      1.5f    // Maximum duration to attempt a flying recovery
 
 // --- STATE HANDLER STRUCTURE DEFINITION ---
