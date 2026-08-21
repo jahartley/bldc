@@ -53,7 +53,6 @@ typedef struct {
     float   speed_target;     // Active Speed PID Setpoint ERPM
     float   speed_i_term;     // Active Speed PID Integrator Current Amps
     float   i_bus;            // Raw Battery Bus Current
-    uint8_t checksum;         // XOR checksum of all previous 84 bytes
 } wrsm_telemetry_packet_t;
 #pragma pack(pop)
 

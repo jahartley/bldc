@@ -8,6 +8,7 @@
 #include "ch.h"
 #include "hal.h"
 #include <math.h>
+#include "commands.h" //JAH added for telemetry packets
 
 // --- STATE MACHINE CONSTANTS (MGU MECHANICAL DOMAIN) ---
 #define MGU_MIN_ALTERNATOR_RPM      1500.0f // minimum MGU rpm to set alternator mode
@@ -601,18 +602,7 @@ void wrsm_supervisor_update(motor_all_state_t *motor, float dt) {
             packet.speed_i_term  = motor->m_speed_i_term;
             packet.i_bus         = ibus_avg;
 
-            // Generate the XOR Packet Checksum
-            uint8_t calc_checksum = 0;
-            uint8_t *packet_bytes = (uint8_t*)&packet;
-            for (int i = 0; i < sizeof(wrsm_telemetry_packet_t) - 1; i++) {
-                calc_checksum ^= packet_bytes[i];
-            }
-            packet.checksum = calc_checksum;
-
-            // Null-Byte Safe Character Stream Output
-            for (int i = 0; i < sizeof(wrsm_telemetry_packet_t); i++) {
-                commands_printf("%c", packet_bytes[i]);
-            }
+            commands_send_packet((uint8_t*)&packet, sizeof(wrsm_telemetry_packet_t));
         }
 
         // 5. Reset the Peak Catchers for the next 20ms block
