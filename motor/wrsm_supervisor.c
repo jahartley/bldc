@@ -483,6 +483,16 @@ void wrsm_supervisor_update(motor_all_state_t *motor, float dt) {
         raw_accel = (current_speed - motor->m_speed_prev_for_accel) / dt;
     }
     motor->m_speed_prev_for_accel = current_speed;
+    // ============================================================================
+    // JAH: OPEN-LOOP & SPIN-DOWN ACCELERATION NOISE FILTER
+    // Below the open-loop handoff threshold (foc_openloop_rpm, typically 1000 ERPM), 
+    // the sensorless observer goes blind as the rotor field decays. Zeroing raw_accel 
+    // here keeps telemetry perfectly clean and prevents false Stall-Catch triggers 
+    // as the engine and rotor spin down to a complete stop.
+    // ============================================================================
+    if (current_speed < motor->m_conf->foc_openloop_rpm) {
+        raw_accel = 0.0f;
+    }
     motor->m_accel = raw_accel;
 
     // Apply native exponential low-pass filter
