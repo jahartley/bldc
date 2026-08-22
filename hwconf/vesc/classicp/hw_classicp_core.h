@@ -270,30 +270,62 @@
 #define HW_DEAD_TIME_NSEC		300.0
 
 // Default setting overrides
-#ifndef MCCONF_L_MIN_VOLTAGE
+
+#ifdef MCCONF_L_MIN_VOLTAGE
+#undef MCCONF_L_MIN_VOLTAGE
+#endif
 #define MCCONF_L_MIN_VOLTAGE			8.0		// Minimum input voltage
+
+#ifdef MCCONF_L_MAX_VOLTAGE
+#undef MCCONF_L_MAX_VOLTAGE
 #endif
-#ifndef MCCONF_L_MAX_VOLTAGE
 #define MCCONF_L_MAX_VOLTAGE			94.0	// Maximum input voltage
+
+#ifdef MCCONF_L_CURRENT_MAX
+#undef MCCONF_L_CURRENT_MAX
 #endif
-#ifndef MCCONF_FOC_F_ZV
+#define MCCONF_L_CURRENT_MAX			200.0    // Current limit in Amperes (Upper)
+
+#ifdef MCCONF_L_CURRENT_MIN
+#undef MCCONF_L_CURRENT_MIN
+#endif
+#define MCCONF_L_CURRENT_MIN			-200.0	// Current limit in Amperes (Lower)
+
+#ifdef MCCONF_FOC_F_ZV
+#undef MCCONF_FOC_F_ZV
+#endif
 #define MCCONF_FOC_F_ZV					30000.0
+
+#ifdef MCCONF_L_MAX_ABS_CURRENT
+#undef MCCONF_L_MAX_ABS_CURRENT
 #endif
-#ifndef MCCONF_L_MAX_ABS_CURRENT
 #define MCCONF_L_MAX_ABS_CURRENT		400.0	// The maximum absolute current above which a fault is generated
+
+#ifdef MCCONF_FOC_SAMPLE_V0_V7
+#undef MCCONF_FOC_SAMPLE_V0_V7
 #endif
-#ifndef MCCONF_FOC_SAMPLE_V0_V7
 #define MCCONF_FOC_SAMPLE_V0_V7			false	// Run control loop in both v0 and v7 (requires phase shunts)
+
+#ifdef MCCONF_L_IN_CURRENT_MAX	
+#undef MCCONF_L_IN_CURRENT_MAX	
 #endif
-#ifndef MCCONF_L_IN_CURRENT_MAX
 #define MCCONF_L_IN_CURRENT_MAX			300.0	// Input current limit in Amperes (Upper)
+
+#ifdef MCCONF_L_IN_CURRENT_MIN	
+#undef MCCONF_L_IN_CURRENT_MIN	
 #endif
-#ifndef MCCONF_L_IN_CURRENT_MIN
 #define MCCONF_L_IN_CURRENT_MIN			-200.0	// Input current limit in Amperes (Lower)
+
+#ifdef APPCONF_APP_TO_USE
+#undef APPCONF_APP_TO_USE
 #endif
-#ifndef APPCONF_APP_TO_USE
 #define APPCONF_APP_TO_USE				APP_NONE
+
+#ifdef MCCONF_L_RPM_MAX
+#undef MCCONF_L_RPM_MAX
 #endif
+#define MCCONF_L_RPM_MAX				160000.0	// The motor speed limit (Upper)ERPM
+
 
 // Setting limits
 #define HW_LIM_CURRENT			-410.0, 410.0
@@ -377,8 +409,8 @@
 
 // --- JAH: WRSM Motor-Generator Unit Cranking Defaults ---
 #define MCCONF_WRSM_CRANK_TARGET_RPM          4800.0f  // 600 engine RPM * 8 PP
-#define MCCONF_WRSM_CRANK_RAMP_TIME           10.0f    // 10s starting ramp time
-#define MCCONF_WRSM_CRANK_TARGET_IQ           100.0f   // 100A starting current target
+#define MCCONF_WRSM_CRANK_RAMP_TIME           5.0f    // 10s starting ramp time
+#define MCCONF_WRSM_CRANK_TARGET_IQ           200.0f   // 100A starting current target
 
 // --- JAH: WRSM Motor-Generator Unit Alternator Defaults ---
 #define MCCONF_WRSM_ALT_TARGET_VOLTAGE        14.2f    // Regulate 12V bus to 14.2V
