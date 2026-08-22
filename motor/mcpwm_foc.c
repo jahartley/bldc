@@ -688,6 +688,13 @@ bool mcpwm_foc_init_done(void) {
 }
 
 void mcpwm_foc_set_configuration(mc_configuration *configuration) {
+	// JAH: PREVENT VESC DESTRUCTION BY FLOATING ALL GATES WHILE MGU IS DRIVEN.
+	if (fabsf(mcpwm_foc_get_rpm()) > configuration->foc_openloop_rpm) {
+		// REJECT config write and block frequency change to prevent high-speed floating!
+		return; 
+	}
+
+
 	// ============================================================================
     // JAH: RAM Intercept hook. Forces incoming config to have safe initialized defaults.
     // ============================================================================
@@ -3624,10 +3631,19 @@ void mcpwm_foc_adc_int_handler(void *p, uint32_t flags) {
 				float observer_mag = NORM2_f(motor_now->m_observer_state.x1, motor_now->m_observer_state.x2);
 				if (observer_mag < (motor_now->m_injected_flux * 0.5f) && 
 					!motor_now->m_phase_observer_override) {
-					
-					motor_now->m_control_mode = CONTROL_MODE_NONE;
-					motor_now->m_state = MC_STATE_OFF;
-					stop_pwm_hw(motor_now); // Float stator phases immediately in the ISR!
+					float current_erpm = fabsf(mcpwm_foc_get_rpm());
+					if (current_erpm > motor_now->m_conf->foc_openloop_rpm) {
+						// High speed! DO NOT FLOAT THE GATES. Force active freewheeling to suppress BEMF!
+						motor_now->m_iq_set = 0.0f;
+						motor_now->m_id_set = 0.0f;
+						motor_now->m_control_mode = CONTROL_MODE_CURRENT;
+						motor_now->m_state = MC_STATE_RUNNING;
+					} else {
+						// Safe low speed. Cleanly float the gates and turn off.
+						motor_now->m_control_mode = CONTROL_MODE_NONE;
+						motor_now->m_state = MC_STATE_OFF;
+						stop_pwm_hw(motor_now); 
+					}
 				}
 
 				// Compensate from the phase lag caused by the switching frequency. This is important for motors
@@ -5219,6 +5235,16 @@ static void control_current(motor_all_state_t *motor, float dt) {
 
 	FOC_PROFILE_LINE_FINE();
 
+#ifdef JAH_HW_DISABLE_LOW_SIDE_SHORT_ON_ZERO_DUTY
+	// For WRSM hardware, bypass low-side shorting entirely to prevent 
+	// accidental short circuits or false latching ESTOP faults at standstill.
+	if (virtual_motor_is_connected() == false) {
+		if (motor->m_pwm_mode != FOC_PWM_ENABLED) {
+			start_pwm_hw(motor);
+		}
+	}
+#else
+
 	if (virtual_motor_is_connected() == false) {
 		// If all duty cycles are equal the phases should be shorted. Instead of
 		// modulating the short we keep all low-side FETs on - that will draw less
@@ -5234,6 +5260,8 @@ static void control_current(motor_all_state_t *motor, float dt) {
 			}
 		}
 	}
+#endif
+
 }
 
 static void update_valpha_vbeta(motor_all_state_t *motor, float mod_alpha, float mod_beta, float voltage_normalize) {

@@ -305,6 +305,7 @@ static THD_FUNCTION(switch_color_thread, arg) {
 	float switch_green = 0.0;
 	float switch_blue = 0.0;
 
+	// THIS is the color spin block.
 	for(int i = 0; i < 400; i++) {
 		float angle = i*3.14/400.0;
 		float s,c;
@@ -319,9 +320,13 @@ static THD_FUNCTION(switch_color_thread, arg) {
 		ledpwm_set_intensity(LED_HW3,switch_bright*switch_red);
 		chThdSleepMilliseconds(4);
 	}
-	float switch_red_old = switch_red_old;
-	float switch_green_old = switch_green;
-	float switch_blue_old = switch_blue;
+
+	// Useed by CROSS FADE block...
+	// float switch_red_old = switch_red;
+	// float switch_green_old = switch_green;
+	// float switch_blue_old = switch_blue;
+	
+	// THIS VEDDERB block sets led color based on battery voltage...
 	// float wh_left;
 	// float left = mc_interface_get_battery_level(&wh_left);
 
@@ -335,91 +340,113 @@ static THD_FUNCTION(switch_color_thread, arg) {
 	// 	utils_truncate_number(&intense,0,1);
 	// 	switch_green = intense;
 	// 	switch_blue  = 1.0-intense;
-	// }
+	// } // END Battery Voltage block
 
-	for (int i = 0; i < 100; i++) {
-		float red_now = utils_map((float) i,0.0, 100.0, switch_red_old, switch_red);
-		float blue_now = utils_map((float) i,0.0, 100.0, switch_blue_old, switch_blue);
-		float green_now = utils_map((float) i,0.0, 100.0, switch_green_old, switch_green);
-		ledpwm_set_intensity(LED_HW1, switch_bright*blue_now);
-		ledpwm_set_intensity(LED_HW2, switch_bright*green_now);
-		ledpwm_set_intensity(LED_HW3, switch_bright*red_now);
-		chThdSleepMilliseconds(2);
-	}
+	// THIS VEDDERB block is a color cross fade from last spin color to battery indicator color
+	// for (int i = 0; i < 100; i++) {
+	// 	float red_now = utils_map((float) i,0.0, 100.0, switch_red_old, switch_red);
+	// 	float blue_now = utils_map((float) i,0.0, 100.0, switch_blue_old, switch_blue);
+	// 	float green_now = utils_map((float) i,0.0, 100.0, switch_green_old, switch_green);
+	// 	ledpwm_set_intensity(LED_HW1, switch_bright*blue_now);
+	// 	ledpwm_set_intensity(LED_HW2, switch_bright*green_now);
+	// 	ledpwm_set_intensity(LED_HW3, switch_bright*red_now);
+	// 	chThdSleepMilliseconds(2);
+	// } // END color cross fade block
 
 	for (;;) {
 		bool pressed = smart_switch_is_pressed();
 		wrsm_super_state_t state = wrsm_supervisor_get_state();
 		mc_fault_code fault = mc_interface_get_fault();
 
-		if (fault != FAULT_CODE_NONE) {
-			ledpwm_set_intensity(LED_HW2, 0);
-			ledpwm_set_intensity(LED_HW1, 0);
-			for (int i = 0;i < (int)fault;i++) {
-				ledpwm_set_intensity(LED_HW3, 1.0);
-				chThdSleepMilliseconds(250);
-				ledpwm_set_intensity(LED_HW3, 0.0);
-				chThdSleepMilliseconds(250);
-			}
+		// if (fault != FAULT_CODE_NONE) {
+		// 	ledpwm_set_intensity(LED_HW2, 0);
+		// 	ledpwm_set_intensity(LED_HW1, 0);
+		// 	for (int i = 0;i < (int)fault;i++) {
+		// 		ledpwm_set_intensity(LED_HW3, 1.0);
+		// 		chThdSleepMilliseconds(250);
+		// 		ledpwm_set_intensity(LED_HW3, 0.0);
+		// 		chThdSleepMilliseconds(250);
+		// 	}
 
-			chThdSleepMilliseconds(500);
-		} else {
-			static uint32_t blink_ticks = 0;
-			blink_ticks++;
+		// 	chThdSleepMilliseconds(500);
+		// } else {
+		static uint32_t blink_ticks = 0;
+		blink_ticks++;
 
-			// If button is held during standby and waiting out the 3.0s guard delay: fast-blink Yellow!
-			if (pressed && (state == WRSM_SUPER_STATE_OFF)) {
+		switch (state) {
+			case WRSM_SUPER_STATE_OFF:
+				if (pressed) { // If button is held during standby and waiting out the 3.0s guard delay: fast-blink Magenta!
+					if ((blink_ticks / 5) % 2 == 0) {
+						switch_red = 1.0f;
+						switch_green = 0.0f;
+						switch_blue = 1.0f; // Magenta ON
+					} else {
+						switch_red = 0.0f;
+						switch_green = 0.0f;
+						switch_blue = 0.0f; // OFF
+					}
+				} else { // STATE OFF
+					switch_blue = 0.3f;
+					switch_green = 0.0f;
+					switch_red = 0.0f; // Dim Blue for Off
+				}
+				break;
+
+			case WRSM_SUPER_STATE_BOOT:
+			case WRSM_SUPER_STATE_STOPPING:
+				switch_blue = 1.0f;
+				switch_green = 0.0f;
+				switch_red = 0.0f; // Blue for Stopping/boot
+				break;
+
+			case WRSM_SUPER_STATE_PRE_EXCITE:
+				switch_red = 1.0f;
+				switch_green = 0.0f;
+				switch_blue = 1.0f; // Solid Magenta for Pre-excitation
+				break;
+
+			case WRSM_SUPER_STATE_CRANKING:
+				switch_red = 0.0f;
+				switch_green = 1.0f;
+				switch_blue = 0.0f; // Green for Engine Cranking
+				break;
+
+			case WRSM_SUPER_STATE_ALTERNATOR:
+				switch_red = 0.2f;
+				switch_green = 0.2f;
+				switch_blue = 0.0f; // Dim yellow for Alternator Active
+				break;
+				
+			case WRSM_SUPER_STATE_STALL_CATCH:
+				switch_red = 0.0f;
+				switch_green = 1.0f;
+				switch_blue = 1.0f; // Cyan for stall catch.
+				break;
+
+			case WRSM_SUPER_STATE_ESTOP:
+				// Blink red for ESTOP.
 				if ((blink_ticks / 5) % 2 == 0) {
 					switch_red = 1.0f;
-					switch_green = 1.0f;
-					switch_blue = 0.0f; // Yellow ON
+					switch_green = 0.0f;
+					switch_blue = 0.0f; // Red ON
 				} else {
 					switch_red = 0.0f;
 					switch_green = 0.0f;
 					switch_blue = 0.0f; // OFF
 				}
-			} else {
-				switch (state) {
-				case WRSM_SUPER_STATE_OFF:
-				case WRSM_SUPER_STATE_BOOT:
-				case WRSM_SUPER_STATE_STOPPING:
-					switch_blue = 1.0f;
-					switch_green = 0.0f;
-					switch_red = 0.0f; // Blue for Standby/Off
-					break;
+				break;
 
-				case WRSM_SUPER_STATE_PRE_EXCITE:
-					switch_red = 1.0f;
-					switch_green = 1.0f;
-					switch_blue = 0.0f; // Solid Yellow (R+G) for Pre-excitation
-					break;
-
-				case WRSM_SUPER_STATE_CRANKING:
-					switch_red = 0.0f;
-					switch_green = 1.0f;
-					switch_blue = 0.0f; // Green for Engine Cranking
-					break;
-
-				case WRSM_SUPER_STATE_ALTERNATOR:
-					switch_red = 1.0f;
-					switch_green = 1.0f;
-					switch_blue = 1.0f; // White (R+G+B) for Alternator Active
-					break;
-
-				case WRSM_SUPER_STATE_FAULT:
-				case WRSM_SUPER_STATE_ESTOP:
-				default:
-					switch_red = 1.0f;
-					switch_green = 0.0f;
-					switch_blue = 0.0f; // Red for Faults/ESTOP
-					break;
-				}
-			}
-
-			ledpwm_set_intensity(LED_HW1, switch_bright * switch_blue);
-			ledpwm_set_intensity(LED_HW2, switch_bright * switch_green);
-			ledpwm_set_intensity(LED_HW3, switch_bright * switch_red);
+			case WRSM_SUPER_STATE_FAULT:
+			default:
+				switch_red = 1.0f;
+				switch_green = 0.0f;
+				switch_blue = 0.0f; // Red for Faults/other
+				break;
 		}
+
+		ledpwm_set_intensity(LED_HW1, switch_bright * switch_blue);
+		ledpwm_set_intensity(LED_HW2, switch_bright * switch_green);
+		ledpwm_set_intensity(LED_HW3, switch_bright * switch_red);
 
 		// Config check
 		mc_configuration *mcconf = (mc_configuration*)mc_interface_get_configuration();

@@ -49,13 +49,13 @@ static void state_off_entry(motor_all_state_t *motor) {
 }
 
 static wrsm_super_state_t state_off_tick(motor_all_state_t *motor, float dt) {
-    // Standby: Wait for external transition request or check motor spin.
-    float current_erpm = fabsf(mcpwm_foc_get_rpm());
-    float erpm_threshold = MGU_RPM_STOPPED_THRESHOLD * POLE_PAIRS;
-    
+    // Standby: Wait for external transition request or check motor spin.    
     // automatic move to alternator mode prevents letting stator current flow 
     // through body diodes due to spin + base flux.
-    if (current_erpm > erpm_threshold) {
+
+    float current_mgu_erpm = fabsf(mcpwm_foc_get_rpm());
+    float threshold_erpm = motor->m_conf->foc_openloop_rpm;
+    if (current_mgu_erpm > threshold_erpm) {
         motor->m_field_override_active = false; // let automatic field control run.
         return WRSM_SUPER_STATE_ALTERNATOR;
     }
@@ -71,11 +71,11 @@ static void state_boot_entry(motor_all_state_t *motor) { // This should never ac
 
 static wrsm_super_state_t state_boot_tick(motor_all_state_t *motor, float dt) {
     wrsm_set_field_enable(motor, true); // no specific reason this should be off.
-    float current_erpm = fabsf(mcpwm_foc_get_rpm());
-        
-    float erpm_threshold = MGU_RPM_STOPPED_THRESHOLD * POLE_PAIRS;
+
     // transition off boot after first pass through boot tick
-    if (current_erpm > erpm_threshold) {
+    float current_mgu_erpm = fabsf(mcpwm_foc_get_rpm());
+    float threshold_erpm = motor->m_conf->foc_openloop_rpm;
+    if (current_mgu_erpm > threshold_erpm) {
         motor->m_field_override_active = false; // let automatic field control run.
         return WRSM_SUPER_STATE_ALTERNATOR;
     }
@@ -101,8 +101,9 @@ static void state_stopping_entry(motor_all_state_t *motor) {
 static wrsm_super_state_t state_stopping_tick(motor_all_state_t *motor, float dt) {
     // If stopping occurred during Open-Loop (standstill / low speed start),
     // float the gates immediately since there is no high-speed BEMF!
-    if (motor->m_phase_observer_override) {
-        mcpwm_foc_stop_pwm(false); // Sets m_state = MC_STATE_OFF & clears override
+    float current_mgu_erpm = fabsf(mcpwm_foc_get_rpm());
+    float threshold_erpm = motor->m_conf->foc_openloop_rpm;
+    if (current_mgu_erpm < threshold_erpm) {
         return WRSM_SUPER_STATE_OFF;
     }
     // watch for FOC Control to transistion to MC_STATE_OFF/CONTROL_MODE_NONE at minimum ERPM
@@ -124,15 +125,16 @@ static wrsm_super_state_t state_pre_excite_guard(motor_all_state_t *motor, wrsm_
             return WRSM_SUPER_STATE_FAULT;
         }
     }
+
     // Prevent entering PRE_EXCITE if stator control is not off/stopped.
     if (motor->m_state != MC_STATE_OFF) {
         return WRSM_SUPER_STATE_FAULT;
     }
+
     // RPM Guard: Prevent entering PRE_EXCITE if the MGU is already spinning
-    float current_erpm = fabsf(mcpwm_foc_get_rpm());
-    float erpm_threshold = MGU_RPM_STOPPED_THRESHOLD * POLE_PAIRS;
-    
-    if (current_erpm > erpm_threshold) {
+    float current_mgu_erpm = fabsf(mcpwm_foc_get_rpm());
+    float threshold_erpm = motor->m_conf->foc_openloop_rpm;
+    if (current_mgu_erpm > threshold_erpm) {
         return WRSM_SUPER_STATE_FAULT;        
     }
     
@@ -163,7 +165,6 @@ static wrsm_super_state_t state_cranking_guard(motor_all_state_t *motor, wrsm_su
 }
 
 static void state_cranking_entry(motor_all_state_t *motor) {
-    // rotor current should be maxed already, give currnent control back to the automatic setting.
     motor->m_field_override_active = true;
     motor->m_field_override_current = 2.5f;
 
@@ -187,9 +188,6 @@ static void state_cranking_entry(motor_all_state_t *motor) {
     motor->m_conf->foc_sl_openloop_time_ramp = handoff_erpm / ramp_slope;
     motor->m_conf->foc_sl_openloop_time      = 0.0f;
     motor->m_speed_pid_set_rpm               = speed_error_offset;
-
-    // JAHTODO JAHDEPRECIATED // Start the stats
-    // JAHTODO JAHDEPRECIATED foc_math_clear_speed_stats(motor);
     
     // Command the speed PID loop to execute
     mcpwm_foc_set_pid_speed(target_erpm);
@@ -223,6 +221,12 @@ static void state_alternator_entry(motor_all_state_t *motor) {
 
 static wrsm_super_state_t state_alternator_tick(motor_all_state_t *motor, float dt) {
     // check for rpm drop so low that stator has turned off unexpectedly.
+    float current_mgu_erpm = fabsf(mcpwm_foc_get_rpm());
+    float threshold_erpm = motor->m_conf->foc_openloop_rpm;
+    if (current_mgu_erpm < threshold_erpm) {
+        return WRSM_SUPER_STATE_OFF;
+    }
+
     if (motor->m_state == MC_STATE_OFF) {
         //return WRSM_SUPER_STATE_FAULT;
         return WRSM_SUPER_STATE_OFF;
@@ -261,7 +265,7 @@ static wrsm_super_state_t state_alternator_tick(motor_all_state_t *motor, float 
      */
     
     // JAHTODO make stall catch decision here.
-    float current_mgu_erpm = fabsf(mcpwm_foc_get_rpm());
+    // if (current_mgu_erpm > ?some erpm threshold) {
     if (false) {
         return WRSM_SUPER_STATE_STALL_CATCH;
     }
@@ -308,11 +312,12 @@ static wrsm_super_state_t state_stall_catch_tick(motor_all_state_t *motor, float
     // switch to mcpwm_foc_set_pid_speed(calc target)
     
     float current_mgu_erpm = fabsf(mcpwm_foc_get_rpm());
+    float stop_threshold_erpm = motor->m_conf->foc_openloop_rpm;
 
     if (current_mgu_erpm > MGU_RPM_RUNNING_THRESHOLD) {
         return WRSM_SUPER_STATE_ALTERNATOR;
-    } else if (current_mgu_erpm < MGU_RPM_STOPPED_THRESHOLD || state_timer >= STALL_RECOVERY_TIMEOUT) {
-        return WRSM_SUPER_STATE_OFF;
+    } else if (state_timer >= STALL_RECOVERY_TIMEOUT) {
+        return WRSM_SUPER_STATE_STOPPING;
     }
     return WRSM_SUPER_STATE_STALL_CATCH;
 }
@@ -328,7 +333,7 @@ static wrsm_super_state_t state_fault_tick(motor_all_state_t *motor, float dt) {
     if (mc_interface_get_fault() == FAULT_CODE_NONE) {
         
         float current_erpm = fabsf(mcpwm_foc_get_rpm());
-        float erpm_threshold = MGU_RPM_STOPPED_THRESHOLD * POLE_PAIRS;
+        float erpm_threshold = motor->m_conf->foc_openloop_rpm;
         
         // automatic move to alternator mode prevents letting stator current flow 
         // through body diodes due to spin + base flux.
@@ -627,7 +632,7 @@ void wrsm_supervisor_update(motor_all_state_t *motor, float dt) {
 
     // --- GLOBAL SAFETY TRANSITION INTERLOCKS ---
     // 1. Terminal Hardware ESTOP Check (Absolute dead-end)
-    if (motor->m_field_ESTOP_LOCKOUT) {
+    if (motor->m_field_ESTOP_LOCKOUT || motor->m_pwm_mode == FOC_PWM_FULL_BRAKE) {
         requested_state = WRSM_SUPER_STATE_ESTOP;
         process_internal_transition(motor);
         return;

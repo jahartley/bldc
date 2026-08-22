@@ -307,6 +307,18 @@
 
 // JAH ADDED SETTING OVERRIDES ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
+// ============================================================================
+// --- WRSM MOTOR-GENERATOR INDUCTOR SAFETY OVERRIDES ---
+// ============================================================================
+// Force-disables low-side MOSFET shorting at zero duty / standstill.
+// Shorting phases on a WRSM can generate violent dynamic locking torque at speed
+// and causes the controller to trigger self-latching false ESTOPs on stop.
+#define JAH_HW_DISABLE_LOW_SIDE_SHORT_ON_ZERO_DUTY
+#ifdef MCCONF_FOC_SHORT_LS_ON_ZERO_DUTY
+#undef MCCONF_FOC_SHORT_LS_ON_ZERO_DUTY
+#endif
+#define MCCONF_FOC_SHORT_LS_ON_ZERO_DUTY false
+
 // Force default observer type to MXLEMMING_LAMBDA_COMP
 #ifdef MCCONF_FOC_OBSERVER_TYPE
 #undef MCCONF_FOC_OBSERVER_TYPE
