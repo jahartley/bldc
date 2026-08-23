@@ -175,19 +175,29 @@ static void state_cranking_entry(motor_all_state_t *motor) {
 
     float kp = motor->m_conf->s_pid_kp;
     float max_current = motor->m_conf->l_current_max;
-
+    
+    /* JAH This is a P error based start version, all current in open loop is set by p error.
+    // Keep this for things I have tried.
     // Calculate starting speed offset for target_iq amp target current
     float speed_error_offset = target_iq / (kp * 0.05f * max_current);
 
     // Calculate the parallel ramp slope
     float ramp_slope = (target_erpm - speed_error_offset) / ramp_time_sec;
     motor->m_conf->s_pid_ramp_erpms_s = ramp_slope;
+    // */ // JAH END P ONLY VERSION.
+
+    // JAH I error based start version. This version aligns the openloop and sensorless parts, an preloads the I term.
+    float ramp_slope = target_erpm / ramp_time_sec;
+    motor->m_conf->s_pid_ramp_erpms_s = ramp_slope;
+    motor->m_speed_i_term = target_iq / max_current;
+    utils_truncate_number_abs(&motor->m_speed_i_term, 1.0f);
 
     // Cleanly configure open-loop driver parameters in RAM
     motor->m_conf->foc_sl_openloop_time_lock = 0.0f;
     motor->m_conf->foc_sl_openloop_time_ramp = handoff_erpm / ramp_slope;
     motor->m_conf->foc_sl_openloop_time      = 0.0f;
-    motor->m_speed_pid_set_rpm               = speed_error_offset;
+    //motor->m_speed_pid_set_rpm               = speed_error_offset;
+    motor->m_speed_pid_set_rpm               = 0.0f;
     
     // Command the speed PID loop to execute
     mcpwm_foc_set_pid_speed(target_erpm);

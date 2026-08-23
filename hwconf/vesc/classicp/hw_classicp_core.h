@@ -284,7 +284,7 @@
 #ifdef MCCONF_L_CURRENT_MAX
 #undef MCCONF_L_CURRENT_MAX
 #endif
-#define MCCONF_L_CURRENT_MAX			200.0    // Current limit in Amperes (Upper)
+#define MCCONF_L_CURRENT_MAX			300.0    // Current limit in Amperes (Upper)
 
 #ifdef MCCONF_L_CURRENT_MIN
 #undef MCCONF_L_CURRENT_MIN
@@ -408,9 +408,22 @@
 #define FIELD_CURRENT_FAULT_DEBOUNCE_CYCLES   100     // 5ms filter debounce window
 
 // --- JAH: WRSM Motor-Generator Unit Cranking Defaults ---
-#define MCCONF_WRSM_CRANK_TARGET_RPM          4800.0f  // 600 engine RPM * 8 PP
+#define MCCONF_WRSM_CRANK_TARGET_RPM          6000.0f  // 600 engine RPM * 8 PP
 #define MCCONF_WRSM_CRANK_RAMP_TIME           5.0f    // 10s starting ramp time
 #define MCCONF_WRSM_CRANK_TARGET_IQ           200.0f   // 100A starting current target
+// Force Open-Loop Handoff Speed to exactly 1000.0 ERPM
+#ifdef MCCONF_FOC_OPENLOOP_RPM
+#undef MCCONF_FOC_OPENLOOP_RPM
+#endif
+#define MCCONF_FOC_OPENLOOP_RPM         1000.0f
+
+#ifdef MCCONF_S_PID_SPEED_SOURCE
+#undef MCCONF_S_PID_SPEED_SOURCE
+#endif
+//#define MCCONF_S_PID_SPEED_SOURCE		S_PID_SPEED_SRC_PLL //default, has as much as 20ms delay.
+#define MCCONF_S_PID_SPEED_SOURCE    S_PID_SPEED_SRC_FASTER //estimate 1ms delay. may be too noisy.
+// can try S_PID_SPEED_SRC_PLL but change UTILS_LP_FAST(motor_now->m_speed_est_fast, diff * fs, 0.01); to
+// UTILS_LP_FAST(motor_now->m_speed_est_fast, diff * fs, 0.05); 20ms for 0.01 to 4ms for 0.05.
 
 // --- JAH: WRSM Motor-Generator Unit Alternator Defaults ---
 #define MCCONF_WRSM_ALT_TARGET_VOLTAGE        14.2f    // Regulate 12V bus to 14.2V
@@ -444,12 +457,6 @@
 #undef MCCONF_FOC_SL_OPENLOOP_BOOST_Q
 #endif
 #define MCCONF_FOC_SL_OPENLOOP_BOOST_Q  0.0f
-
-// Force Open-Loop Handoff Speed to exactly 1000.0 ERPM
-#ifdef MCCONF_FOC_OPENLOOP_RPM
-#undef MCCONF_FOC_OPENLOOP_RPM
-#endif
-#define MCCONF_FOC_OPENLOOP_RPM         1000.0f
 
 // Force the open-loop scaling ratio to 1.0. 
 // (This guarantees the handoff target stays locked at exactly 1000 ERPM 

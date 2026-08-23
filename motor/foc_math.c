@@ -587,9 +587,11 @@ void foc_run_pid_control_speed(bool index_found, float dt, motor_all_state_t *mo
 	}
 
 	// JAH added. Prevent I term wind up under open loop control.
+	/* JAHDEPRECIATED for I term based speed pid start ramp.
 	if (rpm < conf_now->foc_openloop_rpm) {
 		motor->m_speed_i_term = 0.0;
 	}
+	// */
 
 	// Compute parameters
 	p_term = error * conf_now->s_pid_kp * (1.0 / 20.0);
