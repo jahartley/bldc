@@ -1064,7 +1064,7 @@ void terminal_process_string(char *str) {
         commands_printf("accel_filter_coef    | -           | Low-pass filter for d_speed/dt [0.01-1.00]");
         commands_printf(" ");
     } else if (strcmp(argv[0], "wrsm_get") == 0) {
-        const mc_configuration *conf = mc_interface_get_configuration();
+        const volatile mc_configuration *conf = mc_interface_get_configuration();
         commands_printf("=== WRSM & CORE FOC RUNNING PARAMETERS ===");
         commands_printf("--- Crank & Motoring ---");
         commands_printf("  crank_target_rpm   : %.1f ERPM", (double)conf->wrsm_crank_target_rpm);
@@ -1170,7 +1170,7 @@ void terminal_process_string(char *str) {
                             wrsm_supervisor_get_telemetry_enabled() ? "ENABLED" : "DISABLED");
             commands_printf("Usage: wrsm_stream [on | off]\r\n");
         }
-    } else if (strcmp(argv, "conf_default") == 0) {
+    } else if (strcmp(argv[0], "conf_default") == 0) {
 		mc_configuration *mcconf = mempools_alloc_mcconf();
 		*mcconf = *mc_interface_get_configuration();
 		
