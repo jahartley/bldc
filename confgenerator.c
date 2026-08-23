@@ -213,6 +213,21 @@ int32_t confgenerator_serialize_mcconf(uint8_t *buffer, const mc_configuration *
 	buffer_append_float16(buffer, conf->bms.vmax_limit_start, 1000, &ind);
 	buffer_append_float16(buffer, conf->bms.vmax_limit_end, 1000, &ind);
 	buffer[ind++] = conf->bms.fwd_can_mode;
+	// --- JAH: WRSM CONFIG SERIALIZATION APPENDED FOR CRC TRACKING ---
+    buffer_append_float32_auto(buffer, conf->wrsm_crank_target_rpm, &ind);
+    buffer_append_float32_auto(buffer, conf->wrsm_crank_ramp_time, &ind);
+    buffer_append_float32_auto(buffer, conf->wrsm_crank_target_iq, &ind);
+    buffer_append_float32_auto(buffer, conf->wrsm_alt_target_voltage, &ind);
+    buffer_append_float32_auto(buffer, conf->wrsm_alt_batt_charge_limit, &ind);
+    buffer_append_float32_auto(buffer, conf->wrsm_alt_max_iq, &ind);
+    buffer_append_float32_auto(buffer, conf->wrsm_alt_can_timeout_ms, &ind);
+    buffer_append_float32_auto(buffer, conf->wrsm_stall_catch_trigger_rpm, &ind);
+    buffer_append_float32_auto(buffer, conf->wrsm_stall_catch_target_rpm, &ind);
+    buffer_append_float32_auto(buffer, conf->wrsm_stall_catch_max_iq, &ind);
+    buffer_append_float32_auto(buffer, conf->wrsm_stall_catch_kp, &ind);
+    buffer_append_float32_auto(buffer, conf->wrsm_stall_catch_ki, &ind);
+    buffer_append_float32_auto(buffer, conf->wrsm_stall_decel_trigger, &ind);
+    buffer_append_float32_auto(buffer, conf->wrsm_accel_filter_coef, &ind);
 
 	return ind;
 }
@@ -558,6 +573,21 @@ bool confgenerator_deserialize_mcconf(const uint8_t *buffer, mc_configuration *c
 	conf->bms.vmax_limit_start = buffer_get_float16(buffer, 1000, &ind);
 	conf->bms.vmax_limit_end = buffer_get_float16(buffer, 1000, &ind);
 	conf->bms.fwd_can_mode = buffer[ind++];
+	// --- JAH: WRSM CONFIG DESERIALIZATION APPENDED IN IDENTICAL ORDER ---
+    conf->wrsm_crank_target_rpm = buffer_get_float32_auto(buffer, &ind);
+    conf->wrsm_crank_ramp_time = buffer_get_float32_auto(buffer, &ind);
+    conf->wrsm_crank_target_iq = buffer_get_float32_auto(buffer, &ind);
+    conf->wrsm_alt_target_voltage = buffer_get_float32_auto(buffer, &ind);
+    conf->wrsm_alt_batt_charge_limit = buffer_get_float32_auto(buffer, &ind);
+    conf->wrsm_alt_max_iq = buffer_get_float32_auto(buffer, &ind);
+    conf->wrsm_alt_can_timeout_ms = buffer_get_float32_auto(buffer, &ind);
+    conf->wrsm_stall_catch_trigger_rpm = buffer_get_float32_auto(buffer, &ind);
+    conf->wrsm_stall_catch_target_rpm = buffer_get_float32_auto(buffer, &ind);
+    conf->wrsm_stall_catch_max_iq = buffer_get_float32_auto(buffer, &ind);
+    conf->wrsm_stall_catch_kp = buffer_get_float32_auto(buffer, &ind);
+    conf->wrsm_stall_catch_ki = buffer_get_float32_auto(buffer, &ind);
+    conf->wrsm_stall_decel_trigger = buffer_get_float32_auto(buffer, &ind);
+    conf->wrsm_accel_filter_coef = buffer_get_float32_auto(buffer, &ind);
 
 	return true;
 }

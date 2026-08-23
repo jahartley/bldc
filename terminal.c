@@ -1170,12 +1170,38 @@ void terminal_process_string(char *str) {
                             wrsm_supervisor_get_telemetry_enabled() ? "ENABLED" : "DISABLED");
             commands_printf("Usage: wrsm_stream [on | off]\r\n");
         }
-    } else if (strcmp(argv[0], "conf_default") == 0) {
+    } else if (strcmp(argv, "conf_default") == 0) {
 		mc_configuration *mcconf = mempools_alloc_mcconf();
 		*mcconf = *mc_interface_get_configuration();
+		
+		// Reset standard VESC parameters to defaults
 		confgenerator_set_defaults_mcconf(mcconf);
+		
+		// Zero out custom WRSM variables to force-trigger bootstrap reloads!
+		mcconf->m_field_current_offset_v = 0.0f;
+		mcconf->wrsm_crank_target_rpm = 0.0f;
+		mcconf->wrsm_crank_ramp_time = 0.0f;
+		mcconf->wrsm_crank_target_iq = 0.0f;
+		mcconf->wrsm_alt_target_voltage = 0.0f;
+		mcconf->wrsm_alt_batt_charge_limit = 0.0f;
+		mcconf->wrsm_alt_max_iq = 0.0f;
+		mcconf->wrsm_alt_can_timeout_ms = 0.0f;
+		mcconf->wrsm_stall_catch_trigger_rpm = 0.0f;
+		mcconf->wrsm_stall_catch_target_rpm = 0.0f;
+		mcconf->wrsm_stall_catch_max_iq = 0.0f;
+		mcconf->wrsm_stall_catch_kp = 0.0f;
+		mcconf->wrsm_stall_catch_ki = 0.0f;
+		mcconf->wrsm_accel_filter_coef = 0.0f;
+		
+		// The decel trigger check looks for values > -1.0f, so setting to 0.0f triggers it perfectly!
+		mcconf->wrsm_stall_decel_trigger = 0.0f; 
+
+		// Set the configuration (This executes the bootstrap and repopulates all 14 macros)
 		mc_interface_set_configuration(mcconf);
+		
+		// Store the freshly bootstrapped defaults directly to physical flash
 		conf_general_store_mc_configuration(mcconf, mc_interface_get_motor_thread() == 2 ? true : false);
+		
 		mempools_free_mcconf(mcconf);
 		commands_printf("Default motor configuration restored and saved to flash.\n");
 	} else if (strcmp(argv[0], "field_override") == 0) {
