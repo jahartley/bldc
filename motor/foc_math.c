@@ -582,10 +582,26 @@ void foc_run_pid_control_speed(bool index_found, float dt, motor_all_state_t *mo
 	// the current ramp target is below the actual rpm, vs tring to bring the rpm back down to the ramp target.
 
 	float error = motor->m_speed_pid_set_rpm - rpm;
+	float i_error = error; // JAH: Keep original error to remove or add to preset i term
 
-	if (error < 0.0f) { // current rpm above target (m_speed_pid_set_rpm)
+	// JAH added. Turn off ratchet when near final rpm. Take max of the three checks.
+	// 3.5% check
+	float landing_zone = 0.035f * motor->m_speed_command_rpm;
+	// Bandwidth Constraint: Guarantee 40 full PID execution cycles to damp transients
+	float min_pid_cycles = 40.0f;
+	float lz_from_ramp = conf_now->s_pid_ramp_erpms_s * (min_pid_cycles * dt);
+	if (landing_zone < lz_from_ramp) {
+		landing_zone = lz_from_ramp;
+	}
+	// Noise Floor Constraint: Safe limit clear of 3-Sigma speed noise
+	if (landing_zone < 150.0f) {
+		landing_zone = 150.0f;
+	}
+	float check_rpm = motor->m_speed_command_rpm - landing_zone;
+
+	if (!motor->m_phase_observer_override && error < 0.0f && motor->m_speed_pid_set_rpm < check_rpm) { // current rpm above target (m_speed_pid_set_rpm)
 		float target_rpm = motor->m_speed_pid_set_rpm - error; // add error to current ramp target.
-		utils_truncate_number(target_rpm, motor->m_speed_pid_set_rpm, motor->m_speed_command_rpm); // limit to final rpm
+		utils_truncate_number(&target_rpm, motor->m_speed_pid_set_rpm, motor->m_speed_command_rpm); // limit to final rpm
 		motor->m_speed_pid_set_rpm = target_rpm; // ratchet up.
 		error = motor->m_speed_pid_set_rpm - rpm; // recompute error.
 	}
@@ -628,14 +644,14 @@ void foc_run_pid_control_speed(bool index_found, float dt, motor_all_state_t *mo
 
 	// Calculate output
 	float output = p_term + motor->m_speed_i_term + d_term;
-	utils_truncate_number_abs(&output, 1.0);
+	utils_truncate_number_abs(&output, 1.0f);
 
 	// Integrator windup protection
-	motor->m_speed_i_term += error * conf_now->s_pid_ki * dt * (1.0 / 20.0);
-	utils_truncate_number_abs(&motor->m_speed_i_term, 1.0);
+	motor->m_speed_i_term += i_error * conf_now->s_pid_ki * dt * (1.0 / 20.0);
+	utils_truncate_number_abs((float*)&motor->m_speed_i_term, 1.0f);
 
 	if (conf_now->s_pid_ki < 1e-9) {
-		motor->m_speed_i_term = 0.0;
+		motor->m_speed_i_term = 0.0f;
 	}
 
 	// JAH Instead of truncating decel pid portion, map to correct linear acceleration scale from testing.
