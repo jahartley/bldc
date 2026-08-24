@@ -506,6 +506,15 @@
 #define MCCONF_FOC_SL_OPENLOOP_TIME    0.00f
 
 // Tuned Speed PID gains for 300A Max Automotive Engine Cranking
+
+// JAH SPEED PID LINEARIZATION. PID control expects output 0 to equal coast/equilibrium, 1 to equal max accel, -1 to equal max decel, with 1 and -1 being 
+// equal but opposite relative values. This is not the case in this application, the below scaling is an attempt to linearize the speed pid reaction.
+
+#define MCCONF_M_SPEED_IQ_MAX          MCCONF_L_CURRENT_MAX  // Default peak motoring current 20260824 testing shows target_iq = 300a = 4500 erpm/s/s accel.
+#define MCCONF_M_SPEED_IQ_CENTER       49.30f  // Unloaded V8 friction holding current 20260824 testing shows average current to maintain speed 0 erpm/s/s = 49 amps
+// 20260824 testing shows target_iq = 0 = -20,000 erpm/s/s decel, so scale MCCONF_M_SPEED_IQ_MIN to be the same but opposite sign as speed iq max.
+#define MCCONF_M_SPEED_IQ_MIN          38.30f  // Symmetric low-side deceleration floor 20260824 estimated target_iq that equals -4500erpm/s/s decel.
+
 // THESE WILL BE CONFIG DEFAULT VALUES.
 // stock P is 0.002, recommended was 0.015
 #ifdef MCCONF_S_PID_KP

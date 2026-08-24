@@ -1062,6 +1062,9 @@ void terminal_process_string(char *str) {
         commands_printf("stall_ki             | -           | Dedicated Stall Catch PID Ki");
         commands_printf("stall_decel          | ERPM/s^2    | Deceleration trigger for stall catch");
         commands_printf("accel_filter_coef    | -           | Low-pass filter for d_speed/dt [0.01-1.00]");
+		commands_printf("speed_iq_max         | Amperes     | Motoring limit at PID output = 1.0");
+		commands_printf("speed_iq_center      | Amperes     | Friction center-point at PID output = 0.0");
+		commands_printf("speed_iq_min         | Amperes     | Decel limit at PID output = -1.0");
         commands_printf(" ");
     } else if (strcmp(argv[0], "wrsm_get") == 0) {
         const volatile mc_configuration *conf = mc_interface_get_configuration();
@@ -1092,6 +1095,9 @@ void terminal_process_string(char *str) {
         commands_printf("  stall_ki           : %.4f", (double)conf->wrsm_stall_catch_ki);
         commands_printf("  stall_decel        : %.1f ERPM/s^2", (double)conf->wrsm_stall_decel_trigger);
         commands_printf("  accel_filter_coef  : %.4f", (double)conf->wrsm_accel_filter_coef);
+		commands_printf("  speed_iq_max       : %.1f A", (double)conf->m_speed_iq_max);
+		commands_printf("  speed_iq_center    : %.1f A", (double)conf->m_speed_iq_center);
+		commands_printf("  speed_iq_min       : %.1f A", (double)conf->m_speed_iq_min);
         commands_printf(" ");
     } else if (strcmp(argv[0], "wrsm_set") == 0) {
         if (argc == 3) {
@@ -1123,6 +1129,9 @@ void terminal_process_string(char *str) {
                 else if (strcmp(argv[1], "stall_ki") == 0)           mcconf->wrsm_stall_catch_ki = val;
                 else if (strcmp(argv[1], "stall_decel") == 0)        mcconf->wrsm_stall_decel_trigger = val;
                 else if (strcmp(argv[1], "accel_filter_coef") == 0)  mcconf->wrsm_accel_filter_coef = val;
+				else if (strcmp(argv[1], "speed_iq_max") == 0)     	 mcconf->m_speed_iq_max = val;
+				else if (strcmp(argv[1], "speed_iq_center") == 0)  	 mcconf->m_speed_iq_center = val;
+				else if (strcmp(argv[1], "speed_iq_min") == 0)     	 mcconf->m_speed_iq_min = val;
                 else {
                     matched = false;
                     commands_printf("Error: Unknown parameter name: %s", argv[1]);
@@ -1177,7 +1186,7 @@ void terminal_process_string(char *str) {
 		// Reset standard VESC parameters to defaults
 		confgenerator_set_defaults_mcconf(mcconf);
 		
-		// Zero out custom WRSM variables to force-trigger bootstrap reloads!
+		/* JAHTODO JAHDEPRECIATED Zero out custom WRSM variables to force-trigger bootstrap reloads!
 		mcconf->m_field_current_offset_v = 0.0f;
 		mcconf->wrsm_crank_target_rpm = 0.0f;
 		mcconf->wrsm_crank_ramp_time = 0.0f;
@@ -1192,6 +1201,7 @@ void terminal_process_string(char *str) {
 		mcconf->wrsm_stall_catch_kp = 0.0f;
 		mcconf->wrsm_stall_catch_ki = 0.0f;
 		mcconf->wrsm_accel_filter_coef = 0.0f;
+		// */ // END JAH
 		
 		// The decel trigger check looks for values > -1.0f, so setting to 0.0f triggers it perfectly!
 		mcconf->wrsm_stall_decel_trigger = 0.0f; 

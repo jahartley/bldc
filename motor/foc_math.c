@@ -576,7 +576,19 @@ void foc_run_pid_control_speed(bool index_found, float dt, motor_all_state_t *mo
 		break;
 	}
 
+	// JAH added: If we are in a speed ramp phase, any lurches towards the final target rpm should be collected
+	// and counted as free moves in the right direction, vs cutting iq_target to 0, then not being able to recover
+	// until the deceleration is so strong that it cant recover. This code block will ratchet the target rpm up if
+	// the current ramp target is below the actual rpm, vs tring to bring the rpm back down to the ramp target.
+
 	float error = motor->m_speed_pid_set_rpm - rpm;
+
+	if (error < 0.0f) { // current rpm above target (m_speed_pid_set_rpm)
+		float target_rpm = motor->m_speed_pid_set_rpm - error; // add error to current ramp target.
+		utils_truncate_number(target_rpm, motor->m_speed_pid_set_rpm, motor->m_speed_command_rpm); // limit to final rpm
+		motor->m_speed_pid_set_rpm = target_rpm; // ratchet up.
+		error = motor->m_speed_pid_set_rpm - rpm; // recompute error.
+	}
 
 	// Too low RPM set. Reset state, release motor and return.
 	if (fabsf(motor->m_speed_pid_set_rpm) < conf_now->s_pid_min_erpm) {
@@ -592,6 +604,16 @@ void foc_run_pid_control_speed(bool index_found, float dt, motor_all_state_t *mo
 		motor->m_speed_i_term = 0.0;
 	}
 	// */
+
+	// JAH added. Make open loop actually open loop by not running pid during open loop.
+	if (motor->m_phase_observer_override) {
+		// Store previous error
+		motor->m_speed_prev_error = error;
+		float target_iq = conf_now->wrsm_crank_target_iq;
+		utils_truncate_number(&target_iq, conf_now->cc_min_current, conf_now->l_current_max * conf_now->l_current_max_scale);
+		motor->m_iq_set = target_iq;
+		return;
+	}
 
 	// Compute parameters
 	p_term = error * conf_now->s_pid_kp * (1.0 / 20.0);
@@ -616,6 +638,8 @@ void foc_run_pid_control_speed(bool index_found, float dt, motor_all_state_t *mo
 		motor->m_speed_i_term = 0.0;
 	}
 
+	// JAH Instead of truncating decel pid portion, map to correct linear acceleration scale from testing.
+	/* JAH
 	// Optionally disable braking
 	if (!conf_now->s_pid_allow_braking) {
 		if (rpm > 20.0 && output < 0.0) {
@@ -626,8 +650,18 @@ void foc_run_pid_control_speed(bool index_found, float dt, motor_all_state_t *mo
 		// 	output = 0.0;
 		// }
 	}
+	
 
 	motor->m_iq_set = output * conf_now->lo_current_max * conf_now->l_current_max_scale;
+	// */ // END JAH edit.
+
+	// JAH added: this sets speed pid 1 to -1 output to 20260824 tested linear acceleration rates.
+	if (output < 0.0f) {
+		motor->m_iq_set = utils_map(output, -1.0f, 0.0f, conf_now->m_speed_iq_min, conf_now->m_speed_iq_center);
+	} else {
+		motor->m_iq_set = utils_map(output, 0.0f, 1.0f, conf_now->m_speed_iq_center, conf_now->m_speed_iq_max);
+	}
+
 /* JAHTODO JAHDEPRECIATED
 // --- JAH: High-Fidelity Cycle-by-Cycle Stats Gathering ---
     if (m_speed_stats.is_recording) {

@@ -228,6 +228,9 @@ int32_t confgenerator_serialize_mcconf(uint8_t *buffer, const mc_configuration *
     buffer_append_float32_auto(buffer, conf->wrsm_stall_catch_ki, &ind);
     buffer_append_float32_auto(buffer, conf->wrsm_stall_decel_trigger, &ind);
     buffer_append_float32_auto(buffer, conf->wrsm_accel_filter_coef, &ind);
+	buffer_append_float32_auto(buffer, conf->m_speed_iq_max, &ind);
+	buffer_append_float32_auto(buffer, conf->m_speed_iq_center, &ind);
+	buffer_append_float32_auto(buffer, conf->m_speed_iq_min, &ind);
 
 	return ind;
 }
@@ -588,6 +591,9 @@ bool confgenerator_deserialize_mcconf(const uint8_t *buffer, mc_configuration *c
     conf->wrsm_stall_catch_ki = buffer_get_float32_auto(buffer, &ind);
     conf->wrsm_stall_decel_trigger = buffer_get_float32_auto(buffer, &ind);
     conf->wrsm_accel_filter_coef = buffer_get_float32_auto(buffer, &ind);
+	conf->m_speed_iq_max = buffer_get_float32_auto(buffer, &ind);
+	conf->m_speed_iq_center = buffer_get_float32_auto(buffer, &ind);
+	conf->m_speed_iq_min = buffer_get_float32_auto(buffer, &ind);
 
 	return true;
 }
@@ -929,6 +935,24 @@ void confgenerator_set_defaults_mcconf(mc_configuration *conf) {
 	conf->bms.vmax_limit_start = MCCONF_BMS_VMAX_LIMIT_START;
 	conf->bms.vmax_limit_end = MCCONF_BMS_VMAX_LIMIT_END;
 	conf->bms.fwd_can_mode = MCCONF_BMS_FWD_CAN_MODE;
+	// --- JAH: WRSM CONFIG DESERIALIZATION APPENDED IN IDENTICAL ORDER ---
+    conf->wrsm_crank_target_rpm = MCCONF_WRSM_CRANK_TARGET_RPM;
+    conf->wrsm_crank_ramp_time = MCCONF_WRSM_CRANK_RAMP_TIME;
+    conf->wrsm_crank_target_iq = MCCONF_WRSM_CRANK_TARGET_IQ;
+    conf->wrsm_alt_target_voltage = MCCONF_WRSM_ALT_TARGET_VOLTAGE;
+    conf->wrsm_alt_batt_charge_limit = MCCONF_WRSM_ALT_BATT_CHARGE_LIMIT;
+    conf->wrsm_alt_max_iq = MCCONF_WRSM_ALT_MAX_IQ;
+    conf->wrsm_alt_can_timeout_ms = MCCONF_WRSM_ALT_CAN_TIMEOUT_MS;
+    conf->wrsm_stall_catch_trigger_rpm = MCCONF_WRSM_STALL_CATCH_TRIGGER_RPM;
+    conf->wrsm_stall_catch_target_rpm = MCCONF_WRSM_STALL_CATCH_TARGET_RPM;
+    conf->wrsm_stall_catch_max_iq = MCCONF_WRSM_STALL_CATCH_MAX_IQ;
+    conf->wrsm_stall_catch_kp = MCCONF_WRSM_STALL_CATCH_KP;
+    conf->wrsm_stall_catch_ki = MCCONF_WRSM_STALL_CATCH_KI;
+    conf->wrsm_stall_decel_trigger = MCCONF_WRSM_STALL_DECEL_TRIGGER;
+    conf->wrsm_accel_filter_coef = MCCONF_WRSM_ACCEL_FILTER_COE;
+	conf->m_speed_iq_max = MCCONF_M_SPEED_IQ_MAX;
+	conf->m_speed_iq_center = MCCONF_M_SPEED_IQ_CENTER;
+	conf->m_speed_iq_min = MCCONF_M_SPEED_IQ_MIN;
 }
 
 void confgenerator_set_defaults_appconf(app_configuration *conf) {

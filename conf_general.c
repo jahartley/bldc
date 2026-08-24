@@ -2319,4 +2319,9 @@ void conf_general_bootstrap_wrsm_defaults(mc_configuration *conf) {
     if (conf->wrsm_accel_filter_coef < 0.001f || conf->wrsm_accel_filter_coef > 1.0f) {
         conf->wrsm_accel_filter_coef = MCCONF_WRSM_ACCEL_FILTER_COEF;
     }
+
+	// --- Speed PID linearization ---
+	if (conf->m_speed_iq_max < 1.0f)     conf->m_speed_iq_max = MCCONF_M_SPEED_IQ_MAX;
+	if (conf->m_speed_iq_center < 1.0f)  conf->m_speed_iq_center = MCCONF_M_SPEED_IQ_CENTER;
+	if (conf->m_speed_iq_min < 1.0f)     conf->m_speed_iq_min = MCCONF_M_SPEED_IQ_MIN;
 }

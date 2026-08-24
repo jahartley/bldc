@@ -609,6 +609,11 @@ typedef struct {
     float wrsm_stall_decel_trigger;       // Negative acceleration threshold (ERPM/s^2)
     float wrsm_accel_filter_coef;         // Low-pass filter coefficient for d_speed/dt [0.01-1.00]
 
+	// --- JAH: WRSM SPEED PID linearization parameters.
+	float m_speed_iq_max;       // Motoring current limit at PID output = 1.0 (A)
+	float m_speed_iq_center;    // Steady-state V8 friction balance current at PID output = 0.0 (A)
+	float m_speed_iq_min;       // Symmetric deceleration current floor at PID output = -1.0 (A)
+
 	// BMS Configuration
 	bms_config bms;
 

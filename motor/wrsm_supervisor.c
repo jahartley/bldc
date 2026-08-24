@@ -189,8 +189,29 @@ static void state_cranking_entry(motor_all_state_t *motor) {
     // JAH I error based start version. This version aligns the openloop and sensorless parts, an preloads the I term.
     float ramp_slope = target_erpm / ramp_time_sec;
     motor->m_conf->s_pid_ramp_erpms_s = ramp_slope;
-    motor->m_speed_i_term = target_iq / max_current;
-    utils_truncate_number_abs(&motor->m_speed_i_term, 1.0f);
+
+    // JAH Set I term
+    //motor->m_speed_i_term = target_iq / max_current;
+    //utils_truncate_number_abs(&motor->m_speed_i_term, 1.0f);
+
+    // JAH Set I term based on linear output range vs target_iq input amps.
+    float target_iq = motor->m_conf->wrsm_crank_target_iq;
+    float max_iq = motor->m_conf->m_speed_iq_max;
+    float center_iq = motor->m_conf->m_speed_iq_center;
+    float min_iq = motor->m_conf->m_speed_iq_min;
+    float i_term = 0.0f;
+
+    // 1. Calculate the exact math-matched integrator preload value
+    if (target_iq > center_iq) {
+        i_term = (target_iq - center_iq) / (max_iq - center_iq);
+    } else {
+        // Corrected slope matching our gain-equalized low-side span!
+        i_term = (target_iq - center_iq) / (center_iq - min_iq);
+    }
+
+    utils_truncate_number_abs(&i_term, 1.0f);
+
+    motor->m_speed_i_term = i_term;
 
     // Cleanly configure open-loop driver parameters in RAM
     motor->m_conf->foc_sl_openloop_time_lock = 0.0f;
