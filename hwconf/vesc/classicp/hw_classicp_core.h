@@ -526,7 +526,7 @@
 #ifdef MCCONF_S_PID_KD
 #undef MCCONF_S_PID_KD
 #endif
-#define MCCONF_S_PID_KD                0.0003f
+#define MCCONF_S_PID_KD                0.0f  //0.0003f
 
 #ifdef MCCONF_S_PID_KD_FILTER
 #undef MCCONF_S_PID_KD_FILTER

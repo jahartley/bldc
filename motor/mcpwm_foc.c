@@ -4283,7 +4283,7 @@ static void timer_update(motor_all_state_t *motor, float dt) {
 
 	// Don't use this in brake mode.
 	if (motor->m_control_mode == CONTROL_MODE_CURRENT_BRAKE ||
-			(motor->m_state == MC_STATE_RUNNING && fabsf(motor->m_motor_state.duty_now) < 0.001)) {
+			(motor->m_state == MC_STATE_RUNNING && fabsf(motor->m_motor_state.duty_now) < 0.001 && !motor->m_phase_observer_override)) { //JAH PREVENT OPEN LOOP STOP
 		motor->m_min_rpm_hyst_timer = 0.0;
 		motor->m_min_rpm_timer = 0.0;
 		motor->m_phase_observer_override = false;

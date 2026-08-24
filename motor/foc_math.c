@@ -621,10 +621,10 @@ void foc_run_pid_control_speed(bool index_found, float dt, motor_all_state_t *mo
 		if (rpm > 20.0 && output < 0.0) {
 			output = 0.0;
 		}
-
-		if (rpm < -20.0 && output > 0.0) {
-			output = 0.0;
-		}
+		// JAH PREVENT OPEN LOOP STOPS.
+		// if (rpm < -20.0 && output > 0.0) {
+		// 	output = 0.0;
+		// }
 	}
 
 	motor->m_iq_set = output * conf_now->lo_current_max * conf_now->l_current_max_scale;
