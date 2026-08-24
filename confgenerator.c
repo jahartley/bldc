@@ -949,7 +949,7 @@ void confgenerator_set_defaults_mcconf(mc_configuration *conf) {
     conf->wrsm_stall_catch_kp = MCCONF_WRSM_STALL_CATCH_KP;
     conf->wrsm_stall_catch_ki = MCCONF_WRSM_STALL_CATCH_KI;
     conf->wrsm_stall_decel_trigger = MCCONF_WRSM_STALL_DECEL_TRIGGER;
-    conf->wrsm_accel_filter_coef = MCCONF_WRSM_ACCEL_FILTER_COE;
+    conf->wrsm_accel_filter_coef = MCCONF_WRSM_ACCEL_FILTER_COEF;
 	conf->m_speed_iq_max = MCCONF_M_SPEED_IQ_MAX;
 	conf->m_speed_iq_center = MCCONF_M_SPEED_IQ_CENTER;
 	conf->m_speed_iq_min = MCCONF_M_SPEED_IQ_MIN;

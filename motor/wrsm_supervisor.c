@@ -195,7 +195,6 @@ static void state_cranking_entry(motor_all_state_t *motor) {
     //utils_truncate_number_abs(&motor->m_speed_i_term, 1.0f);
 
     // JAH Set I term based on linear output range vs target_iq input amps.
-    float target_iq = motor->m_conf->wrsm_crank_target_iq;
     float max_iq = motor->m_conf->m_speed_iq_max;
     float center_iq = motor->m_conf->m_speed_iq_center;
     float min_iq = motor->m_conf->m_speed_iq_min;
